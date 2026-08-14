@@ -20,49 +20,135 @@ function validateRegistration({ firstName, lastName, username, email, password }
   if (Object.keys(errors).length) throw ApiError.validation(errors)
 }
 
-async function assertUnique(email, username) {
-  const clash = await queryOne('SELECT email, username FROM users WHERE email = ? OR username = ? LIMIT 1', [
-    email.toLowerCase(),
-    username.toLowerCase(),
-  ])
-  if (!clash) return
-  throw ApiError.validation(
-    clash.email === email.toLowerCase()
-      ? { email: 'This email is already registered' }
-      : { username: 'This username is already taken' }
+/**
+ * Reject a username that belongs to somebody else.
+ * `exceptUserId` lets an unverified account keep (or change) its own username.
+ */
+async function assertUsernameFree(username, exceptUserId = null) {
+  const clash = await queryOne(
+    'SELECT id FROM users WHERE username = ? AND id <> ? LIMIT 1',
+    [username, exceptUserId || '']
   )
+  if (clash) throw ApiError.validation({ username: 'This username is already taken' })
 }
 
 async function register(req, res, role) {
   const { firstName, lastName, username, email, password, agreeToPrivacyPolicy } = req.body
   validateRegistration({ firstName, lastName, username, email, password })
-  await assertUnique(email, username)
 
-  const id = uuid()
-  const passwordHash = await bcrypt.hash(password, env.bcryptRounds)
+  const cleanEmail = email.trim().toLowerCase()
+  const cleanUsername = username.trim().toLowerCase()
 
-  await query(
-    `INSERT INTO users
-       (id, first_name, last_name, username, email, password_hash, role,
-        agreed_to_privacy, approval_status, currency)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'AED')`,
-    [
-      id,
-      firstName.trim(),
-      lastName.trim(),
-      username.trim().toLowerCase(),
-      email.trim().toLowerCase(),
-      passwordHash,
-      role,
-      agreeToPrivacyPolicy ? 1 : 0,
-      role === 'artist' ? 'pending' : null,
-    ]
+  const existing = await queryOne(
+    'SELECT id, is_email_verified FROM users WHERE email = ? LIMIT 1',
+    [cleanEmail]
   )
 
-  const user = await queryOne('SELECT * FROM users WHERE id = ?', [id])
+  // A CONFIRMED account owns the address — nobody else can take it.
+  if (existing && existing.is_email_verified) {
+    throw ApiError.validation({ email: 'This email is already registered' })
+  }
+
+  const passwordHash = await bcrypt.hash(password, env.bcryptRounds)
+  const now = new Date()
+  const approvalStatus = role === 'artist' ? 'pending' : null
+
+  let id
+
+  if (existing) {
+    // Started sign-up before but never confirmed the code — that account is not
+    // really theirs yet, so let them go through again rather than locking the
+    // address away forever. The details are overwritten with what was just
+    // submitted and a fresh code goes out.
+    id = existing.id
+    await assertUsernameFree(cleanUsername, id)
+
+    await query(
+      `UPDATE users
+          SET first_name = ?, last_name = ?, username = ?, password_hash = ?,
+              role = ?, agreed_to_privacy = ?, approval_status = ?, updated_at = ?
+        WHERE id = ?`,
+      [
+        firstName.trim(),
+        lastName.trim(),
+        cleanUsername,
+        passwordHash,
+        role,
+        agreeToPrivacyPolicy ? 1 : 0,
+        approvalStatus,
+        now,
+        id,
+      ]
+    )
+  } else {
+    id = uuid()
+    await assertUsernameFree(cleanUsername)
+
+    await query(
+      `INSERT INTO users
+         (id, first_name, last_name, username, email, password_hash, role,
+          agreed_to_privacy, approval_status, currency, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'AED', ?, ?)`,
+      [
+        id,
+        firstName.trim(),
+        lastName.trim(),
+        cleanUsername,
+        cleanEmail,
+        passwordHash,
+        role,
+        agreeToPrivacyPolicy ? 1 : 0,
+        approvalStatus,
+        now,
+        now,
+      ]
+    )
+  }
+
+  // SPEED: build the response from what we just wrote instead of re-selecting
+  // the row — one less round trip on the sign-up path.
+  const user = {
+    id,
+    first_name: firstName.trim(),
+    last_name: lastName.trim(),
+    username: cleanUsername,
+    email: cleanEmail,
+    phone: null,
+    avatar: null,
+    role,
+    is_email_verified: 0,
+    is_phone_verified: 0,
+    approval_status: approvalStatus,
+    currency: 'AED',
+    created_at: now,
+    updated_at: now,
+  }
+
   const token = signToken(user)
 
-  return success(res, { user: serializeUser(user), token }, 'Account created successfully', 201, { token })
+  // Email is queued in the background (mail.service never blocks the response).
+  const otp = await otpService.issue({
+    identifier: cleanEmail,
+    type: 'email',
+    purpose: 'signup',
+    userId: id,
+    firstName: user.first_name,
+  })
+
+  return success(
+    res,
+    {
+      user: serializeUser(user),
+      token,
+      requiresEmailVerification: true,
+      email: cleanEmail,
+      expiresAt: otp.expiresAt,
+      debugCode: otp.debugCode,
+    },
+    'Account created. Check your email for the confirmation code.',
+    201,
+    { token }
+  )
 }
 
 /** POST /auth/register/client */
@@ -79,10 +165,10 @@ exports.login = async (req, res) => {
   if (!identifier) throw ApiError.validation({ email: 'Email or username is required' })
   if (!password) throw ApiError.validation({ password: 'Password is required' })
 
-  const user = await queryOne('SELECT * FROM users WHERE email = ? OR username = ? LIMIT 1', [
-    identifier,
-    identifier,
-  ])
+  // SPEED: pick the column so the query uses ONE unique index instead of
+  // forcing an index merge across uq_users_email + uq_users_username.
+  const column = identifier.includes('@') ? 'email' : 'username'
+  const user = await queryOne(`SELECT * FROM users WHERE ${column} = ? LIMIT 1`, [identifier])
   if (!user) throw ApiError.unauthorized('Invalid credentials')
 
   const matches = await bcrypt.compare(password, user.password_hash)
@@ -179,7 +265,7 @@ exports.forgotPassword = async (req, res) => {
   const email = (req.body.email || '').trim().toLowerCase()
   if (!email || !EMAIL_RE.test(email)) throw ApiError.validation({ email: 'Enter a valid email address' })
 
-  const user = await queryOne('SELECT id, email FROM users WHERE email = ? LIMIT 1', [email])
+  const user = await queryOne('SELECT id, first_name FROM users WHERE email = ? LIMIT 1', [email])
 
   // Always answer the same way so the endpoint cannot be used to discover
   // which emails have accounts.
@@ -192,6 +278,7 @@ exports.forgotPassword = async (req, res) => {
     type: 'email',
     purpose: 'forgot_password',
     userId: user.id,
+    firstName: user.first_name,
   })
 
   return success(

@@ -3,6 +3,7 @@ const express = require('express')
 const cors = require('cors')
 const helmet = require('helmet')
 const morgan = require('morgan')
+const compression = require('compression')
 const rateLimit = require('express-rate-limit')
 
 const env = require('./config/env')
@@ -13,6 +14,11 @@ const { uploadRoot } = require('./middleware/upload')
 const app = express()
 
 app.set('trust proxy', 1)
+// SPEED: skip ETag generation (we never rely on 304s for JSON) and gzip every
+// response over ~1KB — list endpoints compress to a fraction of their size,
+// which matters most on shared hosting like cPanel.
+app.set('etag', false)
+app.use(compression({ threshold: 1024 }))
 
 // Security headers. crossOriginResourcePolicy is relaxed so Next.js can load
 // images served from /uploads on a different port.

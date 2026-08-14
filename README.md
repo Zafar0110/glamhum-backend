@@ -42,6 +42,8 @@ Seeded accounts (password `Password@123`): `admin@glamhub.test`,
 | `npm run db:migrate -- --fresh` | **drops** the database, then re-applies the schema |
 | `npm run db:seed` | insert the three test accounts |
 | `npm run db:reset` | fresh migrate + seed |
+| `npm run mail:preview` | write `preview-email.html` to check the template design |
+| `npm run mail:test -- you@example.com` | verify SMTP and send a real test email |
 
 ## Layout
 
@@ -110,9 +112,12 @@ Implemented:
 | PATCH | `/api/auth/profile` | auth |
 | PATCH | `/api/auth/password` | auth |
 | POST | `/api/auth/logout` | auth |
-| POST | `/api/auth/forgot-password` | issues an OTP |
-| POST | `/api/auth/reset-password` | verifies OTP, sets password |
-| POST | `/api/otp/send` `/verify` `/resend` | |
+| POST | `/api/auth/forgot-password` | emails a reset code |
+| POST | `/api/auth/reset-password` | verifies code, sets password |
+| POST | `/api/otp/send-email` | send/re-send the sign-up code |
+| POST | `/api/otp/verify-email` | verify code → returns `{ user, token }` |
+| POST | `/api/otp/resend` | `purpose: signup \| forgot_password` |
+| POST | `/api/otp/send-phone` | 501 until SMS is enabled |
 | GET | `/api/stripe/config` | |
 
 Registered but returning 501 — grouped under
@@ -122,12 +127,80 @@ Registered but returning 501 — grouped under
 list; each stub is labelled with the frontend function it serves, e.g.
 `artistAPI.getAllAppointments`.
 
-## OTP
+## OTP (email)
 
-No SMS/email provider is wired up. Codes are stored in the `otps` table and
-logged to the console; with `OTP_DEBUG_RETURN=true` (development only) the code
-also comes back in the response as `debugCode`. Plug a provider into
-`deliver()` in `src/services/otp.service.js`.
+Sign-up verification goes by **email**. `POST /api/auth/register/*` creates the
+account and immediately issues a **4-digit** code (`OTP_LENGTH`); the user
+confirms it at `POST /api/otp/verify-email`, which marks the email verified and
+returns a fresh token.
+
+Codes expire after `OTP_EXPIRES_MINUTES` (10), allow 5 wrong attempts, and
+issuing a new one voids the previous. Phone/SMS is parked — `deliverSms()` in
+`src/services/otp.service.js` is where Twilio slots in.
+
+> Changing `OTP_LENGTH` means changing `NEXT_PUBLIC_OTP_LENGTH` in
+> `frontend/.env.local` too, or the API will reject what the form sends.
+
+**Abandoned sign-ups.** An email is only claimed once it has been confirmed.
+If someone registers and never enters the code, registering again with that
+same address overwrites the unverified row and sends a fresh code, instead of
+answering "already registered" forever. Once `is_email_verified = 1`, the
+address is locked to that account. Usernames belonging to *other* accounts are
+always rejected.
+
+### SMTP configuration
+
+Both naming styles are read, so a Laravel-style `.env` works as-is:
+
+| Purpose | Either | Or |
+|---|---|---|
+| Host | `SMTP_HOST` | `MAIL_HOST` |
+| Port | `SMTP_PORT` | `MAIL_PORT` |
+| TLS | `SMTP_SECURE` | `MAIL_ENCRYPTION` (`ssl` → secure, `tls` → STARTTLS) |
+| Username | `SMTP_USER` | `MAIL_USERNAME` |
+| Password | `SMTP_PASSWORD` | `MAIL_PASSWORD` |
+| From | `MAIL_FROM` | `MAIL_FROM_ADDRESS` + `MAIL_FROM_NAME` |
+
+Port 465 is implicit TLS (`secure: true`); 587 uses STARTTLS (`secure: false`) —
+forcing `secure: true` on 587 hangs the connection.
+
+With no host configured the code is only printed to the server console, and
+while `OTP_DEBUG_RETURN=true` it also comes back as `data.debugCode`.
+**Set `OTP_DEBUG_RETURN=false` in production.**
+
+Check delivery before blaming the sign-up flow:
+
+```bash
+npm run mail:test -- you@example.com
+```
+
+### Email template
+
+`src/services/emailTemplates.js` — table-based, fully inlined styles (Gmail and
+Outlook strip `<style>` blocks), site palette (navy `#091E4A`, pink `#d4a5a5`,
+cream `#fdf5f3`, peach `#fce8e2`), serif headings with the pink underline, and
+one peach tile per code digit. The logo is attached inline as `cid:glamhub-logo`
+from `src/assets/logo.png`, so it renders even when the client blocks remote
+images. Every email also carries a plain-text alternative, which helps it stay
+out of spam.
+
+## Performance
+
+The frontend calls these on every page, so they are written to stay fast on
+shared hosting:
+
+- **One pooled MySQL connection set**, created once at boot — never per request
+- **Nodemailer transporter is created once and pooled**, and mail is sent with
+  `setImmediate` *after* the response — SMTP latency never touches API time
+- **gzip on responses > 1KB**, ETag generation off
+- Lookups use unique indexes; login picks `email` **or** `username` explicitly
+  so MySQL uses one index instead of merging two
+- Registration builds its response from the inserted values instead of
+  re-selecting the row
+
+Measured locally: `/api/health` 8ms, `/api/otp/verify-email` 6ms,
+`/api/auth/login` ~175ms — of which ~170ms is deliberate bcrypt work
+(`BCRYPT_ROUNDS=10`). Everything non-hashing is single-digit milliseconds.
 
 ## Real-time chat
 

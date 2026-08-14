@@ -16,6 +16,50 @@ const int = (value, fallback) => {
   return Number.isNaN(parsed) ? fallback : parsed
 }
 
+/** Strip surrounding quotes that .env files often carry, e.g. MAIL_FROM_NAME="GlamHub". */
+const unquote = (value = '') => String(value).trim().replace(/^["']|["']$/g, '')
+
+/**
+ * SMTP settings.
+ *
+ * Accepts either naming convention so an existing Laravel-style .env works
+ * unchanged:
+ *   SMTP_HOST / SMTP_PORT / SMTP_SECURE / SMTP_USER / SMTP_PASSWORD / MAIL_FROM
+ *   MAIL_HOST / MAIL_PORT / MAIL_ENCRYPTION / MAIL_USERNAME / MAIL_PASSWORD /
+ *   MAIL_FROM_ADDRESS + MAIL_FROM_NAME
+ */
+function mailConfig() {
+  const host = unquote(process.env.SMTP_HOST || process.env.MAIL_HOST || '')
+  const port = int(process.env.SMTP_PORT || process.env.MAIL_PORT, 587)
+  const user = unquote(process.env.SMTP_USER || process.env.MAIL_USERNAME || '')
+  const password = unquote(process.env.SMTP_PASSWORD || process.env.MAIL_PASSWORD || '')
+  const encryption = unquote(process.env.MAIL_ENCRYPTION || '').toLowerCase()
+
+  // Implicit TLS only on 465 / ssl. Port 587 uses STARTTLS, which nodemailer
+  // negotiates itself when secure is false — setting secure:true there hangs.
+  const secure =
+    process.env.SMTP_SECURE !== undefined && process.env.SMTP_SECURE !== ''
+      ? bool(process.env.SMTP_SECURE, false)
+      : port === 465 || encryption === 'ssl'
+
+  const fromAddress = unquote(process.env.MAIL_FROM_ADDRESS || '') || user
+  const fromName = unquote(process.env.MAIL_FROM_NAME || 'GlamHub')
+  const from =
+    unquote(process.env.MAIL_FROM || '') ||
+    (fromAddress ? `"${fromName}" <${fromAddress}>` : 'GlamHub <no-reply@glamhub.local>')
+
+  return {
+    host,
+    port,
+    secure,
+    user,
+    password,
+    from,
+    fromName,
+    configured: Boolean(host && user && password),
+  }
+}
+
 const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   isProduction: (process.env.NODE_ENV || 'development') === 'production',
@@ -51,9 +95,13 @@ const env = {
   },
 
   otp: {
+    length: int(process.env.OTP_LENGTH, 4),
     expiresMinutes: int(process.env.OTP_EXPIRES_MINUTES, 10),
     debugReturn: bool(process.env.OTP_DEBUG_RETURN, false),
   },
+
+  // Both naming styles are accepted: SMTP_* and the Laravel-style MAIL_*.
+  mail: mailConfig(),
 
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY || '',
