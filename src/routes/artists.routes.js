@@ -1,17 +1,14 @@
-// Public artist directory — powers /explore, /explore/[artistId] and the home page.
+// Public artist directory — powers /, /explore and /explore/[artistId].
+// No authentication: these pages are browsable by anyone.
 
 const express = require('express')
-const notImplemented = require('../utils/notImplemented')
+const asyncHandler = require('../utils/asyncHandler')
+const controller = require('../controllers/artists.controller')
 
 const router = express.Router()
 
-// GET /api/artists?page&limit&city&serviceType&minPrice&maxPrice&search&sortBy
-router.get('/', notImplemented('artistsAPI.getArtists'))
-
-// GET /api/artists/:artistId  -> { artist, services, reviews }
-router.get('/:artistId', notImplemented('artistsAPI.getArtistById'))
-
-// GET /api/artists/:artistId/availability?date&time
-router.get('/:artistId/availability', notImplemented('artistsAPI.checkAvailability'))
+router.get('/', asyncHandler(controller.getArtists))
+router.get('/:artistId/availability', asyncHandler(controller.checkAvailability))
+router.get('/:artistId', asyncHandler(controller.getArtistById))
 
 module.exports = router

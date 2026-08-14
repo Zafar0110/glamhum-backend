@@ -1,18 +1,20 @@
 // Client dashboard + booking flow. Requires role = 'client'.
 
 const express = require('express')
+const asyncHandler = require('../utils/asyncHandler')
 const { authenticate, authorize } = require('../middleware/auth')
 const notImplemented = require('../utils/notImplemented')
+const controller = require('../controllers/client.controller')
 
 const router = express.Router()
 
 router.use(authenticate, authorize('client'))
 
 // --- bookings ------------------------------------------------------------
-router.post('/bookings', notImplemented('clientAPI.createBooking'))
-router.get('/bookings', notImplemented('clientAPI.getMyBookings'))
-router.get('/bookings/artist/:artistId', notImplemented('clientAPI.getMyBookingsByArtist'))
-router.patch('/bookings/:bookingId/cancel', notImplemented('clientAPI.cancelBooking'))
+router.post('/bookings', asyncHandler(controller.createBooking))
+router.get('/bookings', asyncHandler(controller.getMyBookings))
+router.get('/bookings/artist/:artistId', asyncHandler(controller.getMyBookingsByArtist))
+router.patch('/bookings/:bookingId/cancel', asyncHandler(controller.cancelBooking))
 
 // --- payments ------------------------------------------------------------
 router.post('/payments/prepare', notImplemented('clientAPI.preparePayment'))
@@ -22,9 +24,9 @@ router.get('/payments/:paymentIntentId/status', notImplemented('clientAPI.getPay
 router.post('/payments/refund', notImplemented('clientAPI.refundPayment'))
 
 // --- reviews -------------------------------------------------------------
-router.get('/reviews', notImplemented('clientAPI.getMyReviews'))
-router.post('/reviews', notImplemented('clientAPI.createReview'))
-router.patch('/reviews/:reviewId', notImplemented('clientAPI.updateReview'))
+router.get('/reviews', asyncHandler(controller.getMyReviews))
+router.post('/reviews', asyncHandler(controller.createReview))
+router.patch('/reviews/:reviewId', asyncHandler(controller.updateReview))
 
 // --- messages ------------------------------------------------------------
 router.get('/messages/conversations', notImplemented('clientAPI.getConversations'))

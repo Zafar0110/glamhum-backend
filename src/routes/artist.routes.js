@@ -28,9 +28,9 @@ router.get('/clients', notImplemented('artistAPI.getAllClients'))
 router.get('/clients/:clientId', notImplemented('artistAPI.getClientById'))
 
 // --- appointments --------------------------------------------------------
-router.get('/appointments', notImplemented('artistAPI.getAllAppointments'))
+router.get('/appointments', asyncHandler(controller.getAllAppointments))
 router.post('/appointments', notImplemented('artistAPI.createAppointment'))
-router.patch('/appointments/:appointmentId/status', notImplemented('artistAPI.updateAppointmentStatus'))
+router.patch('/appointments/:appointmentId/status', asyncHandler(controller.updateAppointmentStatus))
 
 // --- schedule: blocked time & vacations ----------------------------------
 router.get('/blocked-time', notImplemented('artistAPI.getBlockedTime'))

@@ -4,6 +4,21 @@
 // consumes carries BOTH `id` and `_id`, plus a computed `fullName`. Keeping
 // that shape here means no page or component has to change.
 
+const env = require('../config/env')
+
+/**
+ * Uploaded files are stored as '/uploads/x.png' but served by THIS server, not
+ * by Next.js. Returning them absolute means every screen renders them without
+ * needing to know the API origin. Anything else (already absolute, or a
+ * bundled /images/... asset shipped with the frontend) is left alone.
+ */
+function absoluteUpload(url) {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url
+  if (url.startsWith('/uploads/')) return `${env.publicUrl}${url}`
+  return url
+}
+
 /** Public user / artist object. Never includes password_hash. */
 function serializeUser(row) {
   if (!row) return null
@@ -18,7 +33,7 @@ function serializeUser(row) {
     email: row.email,
     phone: row.phone || '',
     countryCode: row.country_code || '',
-    avatar: row.avatar || '',
+    avatar: absoluteUpload(row.avatar || ''),
     role: row.role,
     isEmailVerified: Boolean(row.is_email_verified),
     isPhoneVerified: Boolean(row.is_phone_verified),
@@ -154,6 +169,7 @@ function serializeMessage(row) {
 }
 
 module.exports = {
+  absoluteUpload,
   serializeUser,
   serializeService,
   serializeAppointment,

@@ -119,6 +119,9 @@ Implemented:
 | POST | `/api/otp/resend` | `purpose: signup \| forgot_password` |
 | POST | `/api/otp/send-phone` | 501 until SMS is enabled |
 | GET | `/api/stripe/config` | |
+| GET | `/api/artists` | public directory — filters, sort, pagination |
+| GET | `/api/artists/:id` | profile: artist + stats + services + reviews |
+| GET | `/api/artists/:id/availability?date=` | free slots for a date |
 | GET | `/api/services?status=active\|archived\|all` | own catalogue (default active) |
 | POST | `/api/services` | create (with add-ons) |
 | GET/PATCH/DELETE | `/api/services/:id` | ownership enforced |
@@ -128,6 +131,15 @@ Implemented:
 | GET | `/api/portfolio/:artistId` | public gallery |
 | POST | `/api/portfolio` | multipart, field `images`, up to 10 |
 | DELETE | `/api/portfolio` | body `{ imageUrl }` — also deletes the file |
+| POST | `/api/client/bookings` | create a booking (validates + checks clashes) |
+| GET | `/api/client/bookings` | client's bookings, filter by status |
+| GET | `/api/client/bookings/artist/:id` | bookings with one artist |
+| PATCH | `/api/client/bookings/:id/cancel` | client cancels |
+| POST | `/api/client/reviews` | review a completed booking (one each) |
+| PATCH | `/api/client/reviews/:id` | edit your own review |
+| GET | `/api/client/reviews` | the client's reviews |
+| GET | `/api/artist/appointments` | artist's appointments, filters + paging |
+| PATCH | `/api/artist/appointments/:id/status` | confirm / complete / cancel |
 | GET | `/api/artist/profile-status` | approval state + what's missing |
 | POST | `/api/artist/submit-profile` | enter the admin queue |
 | GET | `/api/admin/stats` | dashboard counters |

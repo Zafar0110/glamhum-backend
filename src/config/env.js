@@ -94,6 +94,13 @@ const env = {
     maxBytes: int(process.env.MAX_UPLOAD_MB, 5) * 1024 * 1024,
   },
 
+  /**
+   * Where THIS API is reachable from a browser. Stored image paths are turned
+   * into absolute URLs against it, so the frontend never has to know where
+   * uploads live. Set PUBLIC_URL to the real domain on cPanel.
+   */
+  publicUrl: (process.env.PUBLIC_URL || `http://localhost:${int(process.env.PORT, 5000)}`).replace(/\/+$/, ''),
+
   otp: {
     length: int(process.env.OTP_LENGTH, 4),
     expiresMinutes: int(process.env.OTP_EXPIRES_MINUTES, 10),
