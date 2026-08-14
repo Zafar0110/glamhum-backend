@@ -51,6 +51,35 @@ function authorize(...roles) {
   }
 }
 
+/**
+ * Blocks artist dashboard data until an admin has approved the account.
+ *
+ * Use AFTER authenticate + authorize('artist'), and only on real dashboard
+ * routes — onboarding (profile, services, portfolio, submit-profile) must stay
+ * reachable or the artist can never complete the profile being reviewed.
+ *
+ * The 403 body carries approvalStatus so the frontend can show the right
+ * screen instead of a generic error.
+ */
+function requireApprovedArtist(req, res, next) {
+  if (!req.user) return next(ApiError.unauthorized())
+  if (req.user.role !== 'artist') return next()
+
+  const status = req.user.approval_status || 'pending'
+  if (status === 'approved') return next()
+
+  return res.status(403).json({
+    success: false,
+    message:
+      status === 'rejected'
+        ? 'Your artist profile was not approved yet. Please update it and submit again.'
+        : 'Your artist profile is still awaiting admin approval.',
+    approvalStatus: status,
+    rejectionReason: req.user.rejection_reason || null,
+    data: { approvalStatus: status, rejectionReason: req.user.rejection_reason || null },
+  })
+}
+
 /** Attaches req.user when a valid token is present, but never rejects. */
 async function optionalAuth(req, res, next) {
   const token = extractToken(req)
@@ -64,4 +93,4 @@ async function optionalAuth(req, res, next) {
   next()
 }
 
-module.exports = { authenticate, authorize, optionalAuth }
+module.exports = { authenticate, authorize, optionalAuth, requireApprovedArtist }

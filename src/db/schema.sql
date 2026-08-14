@@ -318,3 +318,9 @@ CREATE TABLE IF NOT EXISTS otps (
   KEY idx_otps_lookup (identifier, purpose, consumed_at),
   CONSTRAINT fk_otps_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Added after the initial schema: tracks when an artist submitted their
+-- profile for review (onboarding step 3 -> admin approval queue).
+-- ---------------------------------------------------------------------------
+ALTER TABLE users ADD COLUMN IF NOT EXISTS submitted_at DATETIME NULL AFTER approval_status;

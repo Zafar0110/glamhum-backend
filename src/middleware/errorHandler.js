@@ -25,9 +25,15 @@ function errorHandler(err, req, res, next) {
     return failure(res, 'Database connection failed', 503)
   }
 
-  // Multer upload errors
+  // Multer upload errors — say what the limit actually is.
   if (err.code === 'LIMIT_FILE_SIZE') {
-    return failure(res, 'File is too large', 413)
+    const maxMb = Math.round(env.upload.maxBytes / 1024 / 1024)
+    return failure(res, `That image is too large. Each file must be ${maxMb}MB or smaller.`, 413, {
+      images: `Each image must be ${maxMb}MB or smaller`,
+    })
+  }
+  if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') {
+    return failure(res, 'Too many files in one upload. Please add up to 10 images at a time.', 400)
   }
 
   // Anything else is a bug

@@ -22,6 +22,8 @@ function serializeUser(row) {
     role: row.role,
     isEmailVerified: Boolean(row.is_email_verified),
     isPhoneVerified: Boolean(row.is_phone_verified),
+    // Account status. false = deactivated by an admin; sign-in is refused.
+    isActive: row.is_active === undefined ? true : Boolean(row.is_active),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -35,6 +37,7 @@ function serializeUser(row) {
     user.approvalStatus = row.approval_status || 'pending'
     user.rejectionReason = row.rejection_reason || undefined
     user.approvedAt = row.approved_at || undefined
+    user.submittedAt = row.submitted_at || undefined
     user.rating = Number(row.rating || 0)
     user.totalReviews = Number(row.total_reviews || 0)
     user.pricing = {

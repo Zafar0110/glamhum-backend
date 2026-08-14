@@ -197,4 +197,105 @@ function otpEmail({ firstName, code, purpose }) {
   }
 }
 
-module.exports = { layout, heading, codeBlock, otpEmail, COLORS, LOGO_CID }
+/** Pill button (email-safe: a table, not an <a> with padding). */
+function button(label, href) {
+  return `
+    <table role="presentation" align="center" cellpadding="0" cellspacing="0" border="0" style="margin:28px auto 0;">
+      <tr>
+        <td align="center" bgcolor="${COLORS.navy}" style="border-radius:40px;">
+          <a href="${href}"
+             style="display:inline-block;padding:14px 34px;font-family:${SANS};font-size:14px;
+                    font-weight:600;color:#ffffff;text-decoration:none;border-radius:40px;">
+            ${label}
+          </a>
+        </td>
+      </tr>
+    </table>`
+}
+
+function paragraph(text) {
+  return `<p style="margin:0 0 14px;font-family:${SANS};font-size:14px;line-height:1.7;color:${COLORS.bodyText};">${text}</p>`
+}
+
+/** Sent when an artist finishes onboarding and enters the review queue. */
+function artistSubmittedEmail({ firstName, appUrl }) {
+  const content = `
+    ${heading('Profile submitted')}
+    <p style="margin:0 0 14px;font-family:${SANS};font-size:15px;color:${COLORS.navy};font-weight:600;">Hi ${firstName},</p>
+    ${paragraph('Thanks for setting up your GlamHub artist profile. Our team is reviewing it now.')}
+    ${paragraph(
+      'Reviews usually finish within 1&ndash;2 business days. We will email you the moment your profile is approved and visible to brides searching on GlamHub.'
+    )}
+    ${paragraph('You can sign in any time to update your details, services or portfolio while you wait.')}
+    ${button('Go to my dashboard', `${appUrl}/dashboard/artist`)}`
+
+  return {
+    subject: 'Your GlamHub artist profile is under review',
+    html: layout({ title: 'Profile submitted', preheader: 'We are reviewing your artist profile.', content }),
+    text: `Hi ${firstName},\n\nThanks for setting up your GlamHub artist profile. Our team is reviewing it now and reviews usually finish within 1-2 business days.\n\nWe will email you as soon as it is approved.\n\nGlamHub`,
+  }
+}
+
+/** Sent when an admin approves the artist. */
+function artistApprovedEmail({ firstName, appUrl }) {
+  const content = `
+    ${heading('You&rsquo;re approved')}
+    <p style="margin:0 0 14px;font-family:${SANS};font-size:15px;color:${COLORS.navy};font-weight:600;">Hi ${firstName},</p>
+    ${paragraph(
+      'Great news — your GlamHub artist account has been approved and your profile is now live. Brides can find you, view your portfolio and book your services.'
+    )}
+    ${paragraph(
+      'Next: keep your availability up to date in <strong>Schedule</strong>, and make sure your services and prices are exactly how you want them.'
+    )}
+    ${button('Open my dashboard', `${appUrl}/dashboard/artist`)}`
+
+  return {
+    subject: 'Your GlamHub artist account has been approved',
+    html: layout({ title: 'Account approved', preheader: 'Your artist profile is now live on GlamHub.', content }),
+    text: `Hi ${firstName},\n\nYour GlamHub artist account has been approved and your profile is now live. Brides can find you, view your portfolio and book your services.\n\nSign in: ${appUrl}/dashboard/artist\n\nGlamHub`,
+  }
+}
+
+/** Sent when an admin rejects the artist, with the reason. */
+function artistRejectedEmail({ firstName, reason, appUrl }) {
+  const content = `
+    ${heading('About your application')}
+    <p style="margin:0 0 14px;font-family:${SANS};font-size:15px;color:${COLORS.navy};font-weight:600;">Hi ${firstName},</p>
+    ${paragraph('Thanks for your interest in joining GlamHub. We are not able to approve your profile as it stands.')}
+    ${
+      reason
+        ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;">
+             <tr>
+               <td style="background-color:${COLORS.cream};border-left:3px solid ${COLORS.pink};
+                          border-radius:8px;padding:14px 16px;font-family:${SANS};font-size:14px;
+                          line-height:1.6;color:${COLORS.navy};">
+                 ${reason}
+               </td>
+             </tr>
+           </table>`
+        : ''
+    }
+    ${paragraph('You can update your profile and submit it again — we are happy to take another look.')}
+    ${button('Update my profile', `${appUrl}/dashboard/artist?tab=profile`)}`
+
+  return {
+    subject: 'An update on your GlamHub artist application',
+    html: layout({ title: 'Application update', preheader: 'An update on your GlamHub artist application.', content }),
+    text: `Hi ${firstName},\n\nThanks for your interest in joining GlamHub. We are not able to approve your profile as it stands.${
+      reason ? `\n\nReason: ${reason}` : ''
+    }\n\nYou can update your profile and submit it again.\n\nGlamHub`,
+  }
+}
+
+module.exports = {
+  layout,
+  heading,
+  codeBlock,
+  button,
+  otpEmail,
+  artistSubmittedEmail,
+  artistApprovedEmail,
+  artistRejectedEmail,
+  COLORS,
+  LOGO_CID,
+}

@@ -119,6 +119,57 @@ Implemented:
 | POST | `/api/otp/resend` | `purpose: signup \| forgot_password` |
 | POST | `/api/otp/send-phone` | 501 until SMS is enabled |
 | GET | `/api/stripe/config` | |
+| GET | `/api/services` | artist's own catalogue |
+| POST | `/api/services` | create (with add-ons) |
+| GET/PATCH/DELETE | `/api/services/:id` | ownership enforced |
+| GET | `/api/portfolio` | own gallery |
+| GET | `/api/portfolio/:artistId` | public gallery |
+| POST | `/api/portfolio` | multipart, field `images`, up to 10 |
+| DELETE | `/api/portfolio` | body `{ imageUrl }` — also deletes the file |
+| GET | `/api/artist/profile-status` | approval state + what's missing |
+| POST | `/api/artist/submit-profile` | enter the admin queue |
+| GET | `/api/admin/stats` | dashboard counters |
+| GET | `/api/admin/artists` | filter/search/sort/paginate |
+| GET | `/api/admin/artists/:id` | detail + services + portfolio |
+| PATCH | `/api/admin/artists/:id/approve` | approves **and emails the artist** |
+| PATCH | `/api/admin/artists/:id/reject` | optional `{ reason }`, emails it |
+| PATCH | `/api/admin/artists/:id/status` | `{ isActive }` — blocks/allows sign-in |
+| DELETE | `/api/admin/artists/:id` | permanent; refused while bookings are live |
+
+## Account status vs approval status
+
+Two independent flags, both shown in the admin table:
+
+- **Approval status** (`approval_status`) — has an admin reviewed the profile?
+  Gates the artist dashboard and public listing.
+- **Account status** (`is_active`) — is the account allowed to sign in at all?
+  `PATCH /admin/artists/:id/status` flips it. Sign-in is refused with
+  *"This account has been deactivated by an administrator"*, and because
+  `authenticate` re-reads `is_active` on every request, tokens already issued
+  stop working immediately — deactivating does not wait for a token to expire.
+
+Deleting is permanent and cascades (services, add-ons, portfolio rows,
+messages, appointments) plus removes the uploaded files from disk. It is
+refused while the artist has `pending` or `confirmed` bookings — deactivate
+instead, so the client's booking is not silently destroyed.
+
+## Artist onboarding &rarr; approval
+
+1. **Step 1** `PATCH /api/auth/profile` — city, description, studio address
+2. **Step 2** `POST /api/services` — at least one service
+3. **Step 3** `POST /api/portfolio` — at least one image, then
+   `POST /api/artist/submit-profile`
+
+Submitting checks the profile is actually complete and, if not, replies with a
+per-field list (`city`, `description`, `address`, `services`, `portfolio`) so
+the UI can say exactly what is missing. On success the artist moves to
+`approval_status = 'pending'` with `submitted_at` set, and gets a
+"profile under review" email.
+
+An admin then approves or rejects from `/dashboard/admin`. Approval sets
+`approved_by` / `approved_at` and emails the artist that they are live;
+rejection stores `rejection_reason` and emails it so they can fix and resubmit.
+Only approved artists appear in the public directory.
 
 Registered but returning 501 — grouped under
 `/api/artists` (public directory), `/api/artist` (artist dashboard),

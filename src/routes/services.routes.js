@@ -1,17 +1,19 @@
 // The signed-in artist's own service catalogue.
 
 const express = require('express')
+const asyncHandler = require('../utils/asyncHandler')
 const { authenticate, authorize } = require('../middleware/auth')
-const notImplemented = require('../utils/notImplemented')
+const controller = require('../controllers/services.controller')
 
 const router = express.Router()
 
 router.use(authenticate, authorize('artist'))
 
-router.get('/', notImplemented('servicesAPI.getMyServices'))
-router.post('/', notImplemented('servicesAPI.createService'))
-router.get('/:id', notImplemented('servicesAPI.getServiceById'))
-router.patch('/:id', notImplemented('servicesAPI.updateService'))
-router.delete('/:id', notImplemented('servicesAPI.deleteService'))
+router.get('/', asyncHandler(controller.getMyServices))
+router.post('/', asyncHandler(controller.createService))
+router.get('/:id', asyncHandler(controller.getServiceById))
+router.patch('/:id', asyncHandler(controller.updateService))
+router.put('/:id', asyncHandler(controller.updateService))
+router.delete('/:id', asyncHandler(controller.deleteService))
 
 module.exports = router

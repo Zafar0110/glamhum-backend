@@ -2,12 +2,26 @@
 // Every route requires a signed-in user with role = 'artist'.
 
 const express = require('express')
-const { authenticate, authorize } = require('../middleware/auth')
+const asyncHandler = require('../utils/asyncHandler')
+const { authenticate, authorize, requireApprovedArtist } = require('../middleware/auth')
 const notImplemented = require('../utils/notImplemented')
+const controller = require('../controllers/artist.controller')
 
 const router = express.Router()
 
 router.use(authenticate, authorize('artist'))
+
+// --- onboarding / approval ----------------------------------------------
+// Reachable while pending: the artist has to be able to finish and resubmit
+// the very profile that is under review.
+router.get('/profile-status', asyncHandler(controller.getProfileStatus))
+router.post('/submit-profile', asyncHandler(controller.submitProfile))
+
+// ---------------------------------------------------------------------------
+// Everything below is real dashboard data and stays closed until an admin
+// approves the account.
+// ---------------------------------------------------------------------------
+router.use(requireApprovedArtist)
 
 // --- clients -------------------------------------------------------------
 router.get('/clients', notImplemented('artistAPI.getAllClients'))

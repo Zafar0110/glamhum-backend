@@ -173,7 +173,12 @@ exports.login = async (req, res) => {
 
   const matches = await bcrypt.compare(password, user.password_hash)
   if (!matches) throw ApiError.unauthorized('Invalid credentials')
-  if (!user.is_active) throw ApiError.forbidden('This account has been disabled')
+  // Deactivated by an admin — refuse the sign-in outright.
+  if (!user.is_active) {
+    throw ApiError.forbidden(
+      'This account has been deactivated by an administrator. Please contact support.'
+    )
+  }
 
   const token = signToken(user, Boolean(rememberMe))
   return success(res, { user: serializeUser(user), token }, 'Signed in successfully', 200, { token })

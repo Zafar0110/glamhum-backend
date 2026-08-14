@@ -74,6 +74,27 @@ function sendOtpEmail({ to, firstName, code, purpose }) {
   sendMailAsync({ to, subject, html, text, attachments: [logoAttachment()] })
 }
 
+/** Where links in emails should point (the Next.js app, not the API). */
+const appUrl = () => env.clientUrls[0] || 'http://localhost:3000'
+
+/** Artist finished onboarding and is waiting on admin review. */
+function sendArtistSubmittedEmail({ to, firstName }) {
+  const { subject, html, text } = templates.artistSubmittedEmail({ firstName, appUrl: appUrl() })
+  sendMailAsync({ to, subject, html, text, attachments: [logoAttachment()] })
+}
+
+/** Admin approved the artist — account is live. */
+function sendArtistApprovedEmail({ to, firstName }) {
+  const { subject, html, text } = templates.artistApprovedEmail({ firstName, appUrl: appUrl() })
+  sendMailAsync({ to, subject, html, text, attachments: [logoAttachment()] })
+}
+
+/** Admin rejected the artist, with a reason they can act on. */
+function sendArtistRejectedEmail({ to, firstName, reason }) {
+  const { subject, html, text } = templates.artistRejectedEmail({ firstName, reason, appUrl: appUrl() })
+  sendMailAsync({ to, subject, html, text, attachments: [logoAttachment()] })
+}
+
 /** Verify SMTP credentials. Used at boot and by scripts/test-email.js. */
 async function verifyConnection() {
   const mailer = getTransporter()
@@ -89,4 +110,13 @@ function sendMailNow(options) {
   return mailer.sendMail({ from: env.mail.from, ...options })
 }
 
-module.exports = { sendMailAsync, sendOtpEmail, verifyConnection, sendMailNow, logoAttachment }
+module.exports = {
+  sendMailAsync,
+  sendOtpEmail,
+  sendArtistSubmittedEmail,
+  sendArtistApprovedEmail,
+  sendArtistRejectedEmail,
+  verifyConnection,
+  sendMailNow,
+  logoAttachment,
+}
