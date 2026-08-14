@@ -82,12 +82,22 @@ async function ownedService(serviceId, artistId) {
   return service
 }
 
-/** GET /api/services */
+/**
+ * GET /api/services?status=active|archived|all
+ * Defaults to active. Archived services keep their data but are hidden from
+ * clients and excluded from the artist's "from" price.
+ */
 exports.getMyServices = async (req, res) => {
+  const status = ['active', 'archived', 'all'].includes(req.query.status) ? req.query.status : 'active'
+
+  const where =
+    status === 'all' ? '' : status === 'archived' ? 'AND is_active = 0' : 'AND is_active = 1'
+
   const rows = await query(
-    'SELECT * FROM services WHERE artist_id = ? AND is_active = 1 ORDER BY created_at ASC',
+    `SELECT * FROM services WHERE artist_id = ? ${where} ORDER BY created_at ASC`,
     [req.user.id]
   )
+
   const services = await withAddOns(rows)
   return success(res, { services }, 'OK', 200, { count: services.length, total: services.length })
 }
@@ -188,6 +198,86 @@ exports.updateService = async (req, res) => {
   const service = await ownedService(req.params.id, req.user.id)
   const [withOns] = await withAddOns([service])
   return success(res, { service: withOns }, 'Service updated successfully')
+}
+
+/**
+ * POST /api/services/:id/duplicate
+ * Copies the service and its add-ons in one transaction. The copy is created
+ * as ACTIVE even when duplicating an archived service, since duplicating is
+ * how an artist reuses an old service as a starting point.
+ */
+exports.duplicateService = async (req, res) => {
+  const original = await ownedService(req.params.id, req.user.id)
+  const newId = uuid()
+
+  // "Bridal Trial" -> "Bridal Trial (Copy)" -> "Bridal Trial (Copy 2)" ...
+  const base = `${original.service_name} (Copy`
+  const [{ taken }] = await query(
+    'SELECT COUNT(*) AS taken FROM services WHERE artist_id = ? AND service_name LIKE ?',
+    [req.user.id, `${base}%`]
+  )
+  const suffix = taken === 0 ? ' (Copy)' : ` (Copy ${taken + 1})`
+  const name = `${original.service_name}${suffix}`.slice(0, 160)
+
+  await transaction(async (connection) => {
+    await connection.execute(
+      `INSERT INTO services
+         (id, artist_id, service_name, service_description, service_type,
+          price_type, price, currency, duration, duration_minutes, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [
+        newId,
+        req.user.id,
+        name,
+        original.service_description,
+        original.service_type,
+        original.price_type,
+        original.price,
+        original.currency,
+        original.duration,
+        original.duration_minutes,
+      ]
+    )
+
+    // Copy the add-ons too — a duplicate without them is not a duplicate.
+    const addOns = await query('SELECT name, price FROM service_addons WHERE service_id = ?', [
+      original.id,
+    ])
+    for (const addOn of addOns) {
+      await connection.execute(
+        'INSERT INTO service_addons (id, service_id, name, price) VALUES (?, ?, ?, ?)',
+        [uuid(), newId, addOn.name, addOn.price]
+      )
+    }
+  })
+
+  await refreshMinPrice(req.user.id)
+
+  const created = await ownedService(newId, req.user.id)
+  const [withOns] = await withAddOns([created])
+  return success(res, { service: withOns, id: newId, _id: newId }, 'Service duplicated', 201)
+}
+
+/**
+ * PATCH /api/services/:id/archive   Body: { archived?: boolean }
+ * Archiving hides the service from clients without deleting it, so past
+ * bookings and their line items stay intact.
+ */
+exports.archiveService = async (req, res) => {
+  await ownedService(req.params.id, req.user.id)
+
+  const archived = req.body?.archived === undefined ? true : Boolean(req.body.archived)
+  await query('UPDATE services SET is_active = ? WHERE id = ?', [archived ? 0 : 1, req.params.id])
+
+  await refreshMinPrice(req.user.id)
+
+  const updated = await ownedService(req.params.id, req.user.id)
+  const [withOns] = await withAddOns([updated])
+  return success(
+    res,
+    { service: withOns },
+    archived ? 'Service archived. Clients can no longer book it.' : 'Service restored and bookable again.'
+  )
 }
 
 /** DELETE /api/services/:id */

@@ -119,9 +119,11 @@ Implemented:
 | POST | `/api/otp/resend` | `purpose: signup \| forgot_password` |
 | POST | `/api/otp/send-phone` | 501 until SMS is enabled |
 | GET | `/api/stripe/config` | |
-| GET | `/api/services` | artist's own catalogue |
+| GET | `/api/services?status=active\|archived\|all` | own catalogue (default active) |
 | POST | `/api/services` | create (with add-ons) |
 | GET/PATCH/DELETE | `/api/services/:id` | ownership enforced |
+| POST | `/api/services/:id/duplicate` | copies the service **and** its add-ons |
+| PATCH | `/api/services/:id/archive` | `{ archived }` — hide/restore without deleting |
 | GET | `/api/portfolio` | own gallery |
 | GET | `/api/portfolio/:artistId` | public gallery |
 | POST | `/api/portfolio` | multipart, field `images`, up to 10 |

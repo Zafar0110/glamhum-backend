@@ -11,6 +11,9 @@ router.use(authenticate, authorize('artist'))
 
 router.get('/', asyncHandler(controller.getMyServices))
 router.post('/', asyncHandler(controller.createService))
+router.post('/:id/duplicate', asyncHandler(controller.duplicateService))
+router.patch('/:id/archive', asyncHandler(controller.archiveService))
+
 router.get('/:id', asyncHandler(controller.getServiceById))
 router.patch('/:id', asyncHandler(controller.updateService))
 router.put('/:id', asyncHandler(controller.updateService))
