@@ -267,13 +267,28 @@ Measured locally: `/api/health` 8ms, `/api/otp/verify-email` 6ms,
 `/api/auth/login` ~175ms — of which ~170ms is deliberate bcrypt work
 (`BCRYPT_ROUNDS=10`). Everything non-hashing is single-digit milliseconds.
 
+| GET | `/api/{client\|artist}/messages/conversations` | one row per counterparty |
+| GET | `/api/{client\|artist}/messages/:appointmentId` | a thread |
+| POST | `/api/{client\|artist}/messages` | send (pushes over the socket) |
+| PATCH | `/api/{client\|artist}/messages/:appointmentId/read` | mark read |
+
 ## Real-time chat
 
 Socket.IO authenticates with the same JWT (`socket.handshake.auth.token`) and
-joins each user to a room named after their user id. After saving a message,
-call `sockets.emitNewMessage(serializedMessage)` — that emits `new_message` to
-the receiver, which is exactly what `frontend/docs/BACKEND_CHAT_REQUIREMENTS.md`
-asks for.
+joins each user to a room named after their user id. `sendMessage` calls
+`sockets.emitNewMessage(payload)` right after saving, so the receiver gets
+`new_message` immediately — measured at **20ms** end to end. The frontend
+`SocketProvider` connects with the stored token and falls back to polling if
+the socket cannot be established.
+
+**A conversation exists as soon as a booking does**, so a client who has just
+booked sees the artist in their message list straight away with no messages
+yet. Threads are keyed by appointment id, and the receiver is derived from the
+appointment — a caller cannot redirect a message to somebody outside the thread.
+
+`messages.created_at` is `DATETIME(3)`. Whole-second precision let two messages
+sent in the same second sort arbitrarily, which reordered threads and showed
+the wrong "last message".
 
 ## Connecting the frontend
 

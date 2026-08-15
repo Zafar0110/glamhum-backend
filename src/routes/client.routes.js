@@ -5,6 +5,7 @@ const asyncHandler = require('../utils/asyncHandler')
 const { authenticate, authorize } = require('../middleware/auth')
 const notImplemented = require('../utils/notImplemented')
 const controller = require('../controllers/client.controller')
+const messages = require('../controllers/messages.controller')
 
 const router = express.Router()
 
@@ -29,10 +30,10 @@ router.post('/reviews', asyncHandler(controller.createReview))
 router.patch('/reviews/:reviewId', asyncHandler(controller.updateReview))
 
 // --- messages ------------------------------------------------------------
-router.get('/messages/conversations', notImplemented('clientAPI.getConversations'))
-router.get('/messages/:appointmentId', notImplemented('clientAPI.getMessages'))
-router.post('/messages', notImplemented('clientAPI.sendMessage'))
-router.patch('/messages/:appointmentId/read', notImplemented('clientAPI.markMessagesAsRead'))
+router.get('/messages/conversations', asyncHandler(messages.getConversations))
+router.get('/messages/:appointmentId', asyncHandler(messages.getMessages))
+router.post('/messages', asyncHandler(messages.sendMessage))
+router.patch('/messages/:appointmentId/read', asyncHandler(messages.markAsRead))
 
 // --- favourites (client dashboard "Favorites" tab) -----------------------
 router.get('/favorites', notImplemented('clientAPI.getFavorites'))

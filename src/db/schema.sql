@@ -194,8 +194,10 @@ CREATE TABLE IF NOT EXISTS messages (
   message        TEXT      NOT NULL,
   is_read        TINYINT(1) NOT NULL DEFAULT 0,
   read_at        DATETIME  NULL,
-  created_at     DATETIME  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at     DATETIME  NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  -- Millisecond precision: chat messages sent in the same second must still
+  -- sort deterministically.
+  created_at     DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at     DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
 
   KEY idx_messages_appt (appointment_id, created_at),
   KEY idx_messages_receiver (receiver_id, is_read),

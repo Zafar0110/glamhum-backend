@@ -6,6 +6,7 @@ const asyncHandler = require('../utils/asyncHandler')
 const { authenticate, authorize, requireApprovedArtist } = require('../middleware/auth')
 const notImplemented = require('../utils/notImplemented')
 const controller = require('../controllers/artist.controller')
+const messages = require('../controllers/messages.controller')
 
 const router = express.Router()
 
@@ -51,10 +52,10 @@ router.get('/reviews', notImplemented('artistAPI.getArtistReviews'))
 router.get('/reviews/:reviewId', notImplemented('artistAPI.getReviewById'))
 
 // --- messages ------------------------------------------------------------
-router.get('/messages/conversations', notImplemented('artistAPI.getConversations'))
-router.get('/messages/:appointmentId', notImplemented('artistAPI.getMessages'))
-router.post('/messages', notImplemented('artistAPI.sendMessage'))
-router.patch('/messages/:appointmentId/read', notImplemented('artistAPI.markMessagesAsRead'))
+router.get('/messages/conversations', asyncHandler(messages.getConversations))
+router.get('/messages/:appointmentId', asyncHandler(messages.getMessages))
+router.post('/messages', asyncHandler(messages.sendMessage))
+router.patch('/messages/:appointmentId/read', asyncHandler(messages.markAsRead))
 
 // --- stripe connect ------------------------------------------------------
 router.get('/stripe/status', notImplemented('artistAPI.getStripeConnectStatus'))
