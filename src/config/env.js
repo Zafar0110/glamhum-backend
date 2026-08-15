@@ -171,10 +171,16 @@ const env = {
   mail: mailConfig(),
 
   stripe: {
-    secretKey: process.env.STRIPE_SECRET_KEY || '',
-    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
-    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    secretKey: unquote(process.env.STRIPE_SECRET_KEY || ''),
+    publishableKey: unquote(process.env.STRIPE_PUBLISHABLE_KEY || ''),
+    webhookSecret: unquote(process.env.STRIPE_WEBHOOK_SECRET || ''),
+    /** Platform cut of each booking, taken as a Stripe application fee. */
     commissionPercent: int(process.env.PLATFORM_COMMISSION_PERCENT, 10),
+    /** Country new Express accounts are opened in. */
+    connectCountry: unquote(process.env.STRIPE_CONNECT_DEFAULT_COUNTRY || 'AE'),
+    /** Cancellations later than this get the reduced refund below. */
+    cancellationCutoffHours: int(process.env.CANCELLATION_CUTOFF_HOURS, 24),
+    lateCancellationRefundPercent: int(process.env.LATE_CANCELLATION_REFUND_PERCENT, 0),
     get configured() {
       return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PUBLISHABLE_KEY)
     },

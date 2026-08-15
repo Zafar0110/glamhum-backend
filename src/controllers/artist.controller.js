@@ -6,7 +6,7 @@ const { query, queryOne } = require('../config/db')
 const env = require('../config/env')
 const ApiError = require('../utils/ApiError')
 const { success, paginated } = require('../utils/response')
-const { serializeUser } = require('../utils/serializers')
+const { serializeUser, serializeReview } = require('../utils/serializers')
 const { hydrateAppointments } = require('../services/appointments.service')
 const mail = require('../services/mail.service')
 
@@ -155,6 +155,136 @@ exports.getAllAppointments = async (req, res) => {
   return paginated(res, { appointments }, { total, page, limit })
 }
 
+/**
+ * GET /api/artist/appointments/:appointmentId
+ * Everything the booking detail page shows: the appointment itself, the
+ * payout breakdown, and the client's review once they have left one.
+ */
+exports.getAppointmentById = async (req, res) => {
+  const row = await queryOne('SELECT * FROM appointments WHERE id = ? LIMIT 1', [
+    req.params.appointmentId,
+  ])
+
+  if (!row) throw ApiError.notFound('Appointment not found')
+  if (row.artist_id !== req.user.id) {
+    throw ApiError.forbidden('This appointment belongs to another artist')
+  }
+
+  const [[appointment], reviewRow, transactions] = await Promise.all([
+    hydrateAppointments([row]),
+    queryOne(
+      `SELECT r.*, u.first_name AS client_first_name, u.last_name AS client_last_name,
+              u.avatar AS client_avatar
+         FROM reviews r
+         JOIN users u ON u.id = r.client_id
+        WHERE r.appointment_id = ? LIMIT 1`,
+      [row.id]
+    ),
+    query(
+      'SELECT * FROM transactions WHERE appointment_id = ? ORDER BY created_at ASC',
+      [row.id]
+    ),
+  ])
+
+  const servicesTotal = Number(row.total_price) - Number(row.service_fee || 0)
+  const { commissionFor } = require('./payments.controller')
+
+  return success(res, {
+    appointment,
+    review: reviewRow ? serializeReview(reviewRow) : null,
+    // Where the client's money went — the same figures the payout uses.
+    payout: {
+      currency: row.currency,
+      servicesTotal,
+      serviceFee: Number(row.service_fee || 0),
+      commission: commissionFor(servicesTotal),
+      artistEarning: row.artist_payout_amount === null ? null : Number(row.artist_payout_amount),
+      total: Number(row.total_price),
+      status: row.artist_payout_status,
+      transferId: row.stripe_transfer_id || null,
+    },
+    transactions: transactions.map((transaction) => ({
+      id: transaction.id,
+      type: transaction.type,
+      status: transaction.status,
+      amount: Number(transaction.amount),
+      currency: transaction.currency,
+      description: transaction.description || '',
+      createdAt: transaction.created_at,
+    })),
+  })
+}
+
+/**
+ * GET /api/artist/reviews?rating=&page=&limit=
+ * Feedback clients left after their appointments completed.
+ */
+exports.getArtistReviews = async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10))
+  const offset = (page - 1) * limit
+
+  const where = ['r.artist_id = ?']
+  const params = [req.user.id]
+
+  const rating = parseInt(req.query.rating, 10)
+  if (rating >= 1 && rating <= 5) {
+    where.push('r.rating = ?')
+    params.push(rating)
+  }
+
+  const whereSql = `WHERE ${where.join(' AND ')}`
+
+  // Count, page of rows and the rating breakdown together — the summary always
+  // covers every review, not just the page being shown.
+  const [[{ total }], rows, summary] = await Promise.all([
+    query(`SELECT COUNT(*) AS total FROM reviews r ${whereSql}`, params),
+    query(
+      `SELECT r.*, u.first_name AS client_first_name, u.last_name AS client_last_name,
+              u.avatar AS client_avatar,
+              a.appointment_date, a.start_time
+         FROM reviews r
+         JOIN users u ON u.id = r.client_id
+         LEFT JOIN appointments a ON a.id = r.appointment_id
+         ${whereSql}
+        ORDER BY r.created_at DESC
+        LIMIT ? OFFSET ?`,
+      [...params, String(limit), String(offset)]
+    ),
+    queryOne(
+      `SELECT COUNT(*) AS count, COALESCE(AVG(rating), 0) AS average,
+              SUM(rating = 5) AS five, SUM(rating = 4) AS four, SUM(rating = 3) AS three,
+              SUM(rating = 2) AS two, SUM(rating = 1) AS one
+         FROM reviews WHERE artist_id = ?`,
+      [req.user.id]
+    ),
+  ])
+
+  const reviews = rows.map((row) => ({
+    ...serializeReview(row),
+    appointmentDate: row.appointment_date || null,
+  }))
+
+  return paginated(
+    res,
+    {
+      reviews,
+      summary: {
+        total: Number(summary.count),
+        averageRating: Math.round(Number(summary.average) * 10) / 10,
+        breakdown: {
+          5: Number(summary.five || 0),
+          4: Number(summary.four || 0),
+          3: Number(summary.three || 0),
+          2: Number(summary.two || 0),
+          1: Number(summary.one || 0),
+        },
+      },
+    },
+    { total, page, limit }
+  )
+}
+
 const ALLOWED_TRANSITIONS = {
   pending: ['confirmed', 'cancelled'],
   confirmed: ['completed', 'cancelled'],
@@ -187,32 +317,41 @@ exports.updateAppointmentStatus = async (req, res) => {
     )
   }
 
-  if (status === 'completed') {
-    const paid = appointment.payment_status === 'paid'
-    await query(
-      `UPDATE appointments
-          SET status = 'completed',
-              artist_payout_status = CASE WHEN payment_status = 'paid' THEN 'released' ELSE artist_payout_status END
-        WHERE id = ?`,
-      [appointment.id]
-    )
+  let payoutNote = ''
 
-    if (paid && appointment.artist_payout_status !== 'released') {
-      const { v4: uuid } = require('uuid')
-      await query(
-        `INSERT INTO transactions (id, artist_id, appointment_id, type, status, amount, currency, description)
-         VALUES (?, ?, ?, 'payout', 'completed', ?, ?, ?)`,
-        [
-          uuid(),
-          appointment.artist_id,
-          appointment.id,
-          appointment.artist_payout_amount || 0,
-          appointment.currency,
-          'Payout released for completed appointment',
-        ]
-      )
+  if (status === 'completed') {
+    // Completing the job is what releases the escrow: the artist's share is
+    // transferred to their connected Stripe account and the platform keeps the
+    // service fee plus its commission. Done BEFORE the status flips so a Stripe
+    // failure cannot leave a completed booking silently unpaid.
+    const { releaseEscrow } = require('./payments.controller')
+    const result = await releaseEscrow(appointment).catch((error) => {
+      console.error('[escrow] release failed for', appointment.id, '-', error.message)
+      return { released: false, reason: 'transfer_failed', error: error.message }
+    })
+
+    await query("UPDATE appointments SET status = 'completed' WHERE id = ?", [appointment.id])
+
+    if (result.released) {
+      payoutNote = ` ${appointment.currency} ${result.amount} released to your Stripe account (commission ${appointment.currency} ${result.commission}).`
+    } else if (result.reason === 'artist_not_onboarded') {
+      payoutNote = ' Your earnings are in your balance — finish payout setup to receive them.'
+    } else if (result.reason === 'transfer_failed') {
+      payoutNote = ' The payout could not be sent yet and will be retried.'
     }
   } else if (status === 'cancelled') {
+    // The artist is declining, so the client keeps the whole amount — the
+    // late-cancellation penalty only applies when the CLIENT pulls out. Refund
+    // first: cancelling a paid booking without returning the money would leave
+    // the client charged for a service nobody is going to perform.
+    const { issueRefund } = require('./payments.controller')
+    const refund = await issueRefund(appointment, {
+      reason: String(req.body?.cancellationReason || 'Declined by artist').trim(),
+    }).catch((error) => {
+      console.error('[refund] failed for', appointment.id, '-', error.message)
+      return { refunded: false, reason: 'refund_failed', error: error.message }
+    })
+
     await query(
       `UPDATE appointments
           SET status = 'cancelled', cancelled_at = NOW(),
@@ -221,6 +360,18 @@ exports.updateAppointmentStatus = async (req, res) => {
         WHERE id = ?`,
       [String(req.body?.cancellationReason || 'Cancelled by artist').trim(), appointment.id]
     )
+
+    // A cancelled booking earns nothing, so the held deposit never settles.
+    await query(
+      "UPDATE transactions SET status = 'failed' WHERE appointment_id = ? AND type = 'deposit' AND status = 'pending'",
+      [appointment.id]
+    )
+
+    if (refund.refunded) {
+      payoutNote = ` ${appointment.currency} ${refund.amount} has been refunded to the client in full.`
+    } else if (refund.reason === 'refund_failed') {
+      payoutNote = ' The client refund could not be sent — please contact support.'
+    }
   } else {
     await query('UPDATE appointments SET status = ? WHERE id = ?', [status, appointment.id])
   }
@@ -229,5 +380,5 @@ exports.updateAppointmentStatus = async (req, res) => {
     await query('SELECT * FROM appointments WHERE id = ?', [appointment.id])
   )
 
-  return success(res, { appointment: updated }, `Appointment ${status}`)
+  return success(res, { appointment: updated }, `Appointment ${status}.${payoutNote}`)
 }

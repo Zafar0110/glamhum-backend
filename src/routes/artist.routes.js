@@ -7,6 +7,7 @@ const { authenticate, authorize, requireApprovedArtist } = require('../middlewar
 const notImplemented = require('../utils/notImplemented')
 const controller = require('../controllers/artist.controller')
 const messages = require('../controllers/messages.controller')
+const payments = require('../controllers/payments.controller')
 
 const router = express.Router()
 
@@ -31,6 +32,7 @@ router.get('/clients/:clientId', notImplemented('artistAPI.getClientById'))
 // --- appointments --------------------------------------------------------
 router.get('/appointments', asyncHandler(controller.getAllAppointments))
 router.post('/appointments', notImplemented('artistAPI.createAppointment'))
+router.get('/appointments/:appointmentId', asyncHandler(controller.getAppointmentById))
 router.patch('/appointments/:appointmentId/status', asyncHandler(controller.updateAppointmentStatus))
 
 // --- schedule: blocked time & vacations ----------------------------------
@@ -43,12 +45,12 @@ router.post('/vacations', notImplemented('artistAPI.createVacation'))
 router.delete('/vacations/:vacationId', notImplemented('artistAPI.deleteVacation'))
 
 // --- payments ------------------------------------------------------------
-router.get('/payments/stats', notImplemented('artistAPI.getPaymentStats'))
-router.get('/payments/transactions', notImplemented('artistAPI.getAllTransactions'))
-router.post('/payments/withdrawals', notImplemented('artistAPI.requestWithdrawal'))
+router.get('/payments/stats', asyncHandler(payments.getPaymentStats))
+router.get('/payments/transactions', asyncHandler(payments.getAllTransactions))
+router.post('/payments/withdrawals', asyncHandler(payments.requestWithdrawal))
 
 // --- reviews -------------------------------------------------------------
-router.get('/reviews', notImplemented('artistAPI.getArtistReviews'))
+router.get('/reviews', asyncHandler(controller.getArtistReviews))
 router.get('/reviews/:reviewId', notImplemented('artistAPI.getReviewById'))
 
 // --- messages ------------------------------------------------------------
@@ -58,8 +60,8 @@ router.post('/messages', asyncHandler(messages.sendMessage))
 router.patch('/messages/:appointmentId/read', asyncHandler(messages.markAsRead))
 
 // --- stripe connect ------------------------------------------------------
-router.get('/stripe/status', notImplemented('artistAPI.getStripeConnectStatus'))
-router.post('/stripe/connect-link', notImplemented('artistAPI.createStripeConnectLink'))
-router.get('/stripe/dashboard-link', notImplemented('artistAPI.getStripeDashboardLink'))
+router.get('/stripe/status', asyncHandler(payments.getStripeConnectStatus))
+router.post('/stripe/connect-link', asyncHandler(payments.createStripeConnectLink))
+router.get('/stripe/dashboard-link', asyncHandler(payments.getStripeDashboardLink))
 
 module.exports = router

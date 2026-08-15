@@ -25,6 +25,18 @@ function errorHandler(err, req, res, next) {
     return failure(res, 'Database connection failed', 503)
   }
 
+  // Stripe rejections are the caller's problem to act on, not a server fault.
+  // Surfacing them as 500s hides the real reason behind "Request failed with
+  // status code 500".
+  if (err.stripeType || err.stripeCode) {
+    const status = err.stripeType === 'card_error' ? 402 : 400
+    console.error(`[stripe] ${err.stripeType || 'error'} ${err.stripeCode || ''}: ${err.message}`)
+    return failure(res, err.message, status)
+  }
+  if (err.stripeUnconfigured) {
+    return failure(res, 'Online payments are not switched on yet.', 503)
+  }
+
   // Multer upload errors — say what the limit actually is.
   if (err.code === 'LIMIT_FILE_SIZE') {
     const maxMb = Math.round(env.upload.maxBytes / 1024 / 1024)

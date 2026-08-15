@@ -6,6 +6,7 @@ const { authenticate, authorize } = require('../middleware/auth')
 const notImplemented = require('../utils/notImplemented')
 const controller = require('../controllers/client.controller')
 const messages = require('../controllers/messages.controller')
+const payments = require('../controllers/payments.controller')
 
 const router = express.Router()
 
@@ -18,11 +19,11 @@ router.get('/bookings/artist/:artistId', asyncHandler(controller.getMyBookingsBy
 router.patch('/bookings/:bookingId/cancel', asyncHandler(controller.cancelBooking))
 
 // --- payments ------------------------------------------------------------
-router.post('/payments/prepare', notImplemented('clientAPI.preparePayment'))
-router.post('/payments/confirm', notImplemented('clientAPI.confirmPayment'))
-router.post('/payments/process', notImplemented('clientAPI.processPayment'))
-router.get('/payments/:paymentIntentId/status', notImplemented('clientAPI.getPaymentIntentStatus'))
-router.post('/payments/refund', notImplemented('clientAPI.refundPayment'))
+router.post('/payments/prepare', asyncHandler(payments.preparePayment))
+router.post('/payments/confirm', asyncHandler(payments.confirmPayment))
+router.post('/payments/process', asyncHandler(payments.processPayment))
+router.get('/payments/:paymentIntentId/status', asyncHandler(payments.getPaymentIntentStatus))
+router.post('/payments/refund', asyncHandler(payments.refundPayment))
 
 // --- reviews -------------------------------------------------------------
 router.get('/reviews', asyncHandler(controller.getMyReviews))

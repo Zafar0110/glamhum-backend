@@ -1,6 +1,9 @@
+const fs = require('fs')
+const path = require('path')
 const bcrypt = require('bcryptjs')
 const { v4: uuid } = require('uuid')
 const env = require('../config/env')
+const { uploadRoot, publicUrl } = require('../middleware/upload')
 const { query, queryOne } = require('../config/db')
 const ApiError = require('../utils/ApiError')
 const { success } = require('../utils/response')
@@ -237,6 +240,20 @@ exports.updateProfile = async (req, res) => {
     if (field === 'email') value = String(value).trim().toLowerCase()
     if (field === 'username') value = String(value).trim().toLowerCase()
     if (field === 'hasStudio') value = value ? 1 : 0
+    if (field === 'avatar') {
+      // `avatar` is a VARCHAR(255) path, not the picture itself. A base64 data
+      // URL would be silently truncated to 255 characters of garbage and the
+      // image would break everywhere it is shown — send the file to
+      // POST /auth/avatar instead.
+      if (String(value).startsWith('data:')) {
+        throw ApiError.validation({
+          avatar: 'Upload the image file to /auth/avatar rather than sending image data',
+        })
+      }
+      if (String(value).length > 255) {
+        throw ApiError.validation({ avatar: 'Avatar path is too long' })
+      }
+    }
     sets.push(`${column} = ?`)
     values.push(value)
   }
@@ -260,6 +277,48 @@ exports.updateProfile = async (req, res) => {
 
   const user = await queryOne('SELECT * FROM users WHERE id = ?', [req.user.id])
   return success(res, { user: serializeUser(user) }, 'Profile updated successfully')
+}
+
+/**
+ * POST /auth/avatar   (multipart, field name: `avatar`)
+ *
+ * Stores the picture on disk and keeps only its path in the database, so the
+ * same URL can be served to every screen that shows the user — header,
+ * dashboards, artist cards, reviews, bookings.
+ */
+exports.uploadAvatar = async (req, res) => {
+  if (!req.file) throw ApiError.validation({ avatar: 'Choose an image to upload' })
+
+  const url = publicUrl(req.file.filename)
+  const previous = req.user.avatar
+
+  await query('UPDATE users SET avatar = ? WHERE id = ?', [url, req.user.id])
+
+  // Remove the file this one replaced — but never a bundled /images/... asset.
+  if (previous && previous.startsWith('/uploads/')) {
+    fs.promises
+      .unlink(path.join(uploadRoot, path.basename(previous)))
+      .catch(() => {})
+  }
+
+  const user = await queryOne('SELECT * FROM users WHERE id = ?', [req.user.id])
+  return success(res, { user: serializeUser(user), avatar: url }, 'Profile photo updated')
+}
+
+/** DELETE /auth/avatar — go back to the default picture. */
+exports.removeAvatar = async (req, res) => {
+  const previous = req.user.avatar
+
+  await query('UPDATE users SET avatar = NULL WHERE id = ?', [req.user.id])
+
+  if (previous && previous.startsWith('/uploads/')) {
+    fs.promises
+      .unlink(path.join(uploadRoot, path.basename(previous)))
+      .catch(() => {})
+  }
+
+  const user = await queryOne('SELECT * FROM users WHERE id = ?', [req.user.id])
+  return success(res, { user: serializeUser(user) }, 'Profile photo removed')
 }
 
 /** PATCH /auth/password */

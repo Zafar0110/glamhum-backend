@@ -99,7 +99,7 @@ async function resolveBooking(body, clientId) {
 }
 
 /** Insert the appointment and its line items in one transaction. */
-async function createAppointment(resolved, { paymentMethod, paid, paymentIntentId = null, notes }) {
+async function createAppointment(resolved, { paymentMethod, paid, paymentIntentId = null, chargeId = null, notes }) {
   const id = uuid()
   const commission = env.stripe.commissionPercent / 100
   const payoutAmount = paid ? Math.round(resolved.servicesTotal * (1 - commission) * 100) / 100 : null
@@ -110,8 +110,8 @@ async function createAppointment(resolved, { paymentMethod, paid, paymentIntentI
          (id, client_id, artist_id, appointment_date, start_time, end_time, duration_minutes,
           venue, venue_name, venue_street, venue_city, venue_state,
           status, currency, total_price, service_fee, payment_method, payment_status,
-          payment_intent_id, artist_payout_status, artist_payout_amount, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          payment_intent_id, stripe_charge_id, artist_payout_status, artist_payout_amount, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         resolved.clientId,
@@ -125,13 +125,16 @@ async function createAppointment(resolved, { paymentMethod, paid, paymentIntentI
         resolved.details.street || null,
         resolved.details.city || null,
         resolved.details.state || null,
-        paid ? 'confirmed' : 'pending',
+        // Every booking waits for the artist, paid or not. Paying reserves the
+        // money in escrow; it does not commit the artist's time for them.
+        'pending',
         resolved.artist.currency || 'AED',
         resolved.total,
         SERVICE_FEE,
         paymentMethod,
         paid ? 'paid' : 'unpaid',
         paymentIntentId,
+        chargeId,
         paid ? 'pending' : 'not_applicable',
         payoutAmount,
         notes || null,
@@ -170,6 +173,47 @@ exports.createBooking = async (req, res) => {
   )
 
   return success(res, { booking, appointment: booking }, 'Booking confirmed', 201)
+}
+
+/**
+ * Create a booking that has already been paid for.
+ * Called by payments.confirmPayment once Stripe has confirmed the charge, so
+ * no appointment exists until the money is actually taken.
+ */
+exports.createPaidBooking = async (req, { paymentIntentId, chargeId = null }) => {
+  const resolved = await resolveBooking(req.body, req.user.id)
+
+  const id = await createAppointment(resolved, {
+    paymentMethod: 'pay_now',
+    paid: true,
+    paymentIntentId,
+    // The charge the escrow payout will later be drawn from.
+    chargeId,
+    notes: req.body.notes,
+  })
+
+  const [booking] = await hydrateAppointments(
+    await query('SELECT * FROM appointments WHERE id = ?', [id])
+  )
+
+  // Ledger entry so the artist's Payments tab reflects the earning.
+  const { recordTransaction, commissionFor } = require('./payments.controller')
+  const payout = resolved.servicesTotal - commissionFor(resolved.servicesTotal)
+
+  await recordTransaction({
+    artistId: resolved.artist.id,
+    clientId: req.user.id,
+    appointmentId: id,
+    type: 'deposit',
+    // Held in escrow until the artist completes the appointment.
+    status: 'pending',
+    amount: payout,
+    currency: resolved.artist.currency || 'AED',
+    description: `Payment for appointment ${id}`,
+    reference: paymentIntentId,
+  })
+
+  return booking
 }
 
 /** GET /api/client/bookings?status=all|pending|confirmed|cancelled|completed */
@@ -240,6 +284,12 @@ exports.cancelBooking = async (req, res) => {
             artist_payout_status = CASE WHEN payment_status = 'paid' THEN 'refunded' ELSE 'not_applicable' END
       WHERE id = ?`,
     [reason, booking.id]
+  )
+
+  // A cancelled booking earns nothing, so the held deposit never settles.
+  await query(
+    "UPDATE transactions SET status = 'failed' WHERE appointment_id = ? AND type = 'deposit' AND status = 'pending'",
+    [booking.id]
   )
 
   const [updated] = await hydrateAppointments(
