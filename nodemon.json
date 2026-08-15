@@ -1,0 +1,7 @@
+{
+  "//": "dotenv reads .env once at startup, so a change there needs a full restart. Watching the file here means editing .env restarts the server automatically — otherwise the process silently keeps stale config (e.g. 'SMS not configured' after adding Twilio keys).",
+  "watch": ["src", "scripts", ".env"],
+  "ext": "js,json,env",
+  "ignore": ["uploads/*", "*.test.js"],
+  "delay": 300
+}

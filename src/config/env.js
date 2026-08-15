@@ -102,10 +102,70 @@ const env = {
   publicUrl: (process.env.PUBLIC_URL || `http://localhost:${int(process.env.PORT, 5000)}`).replace(/\/+$/, ''),
 
   otp: {
+    /** Which channel sign-up verification uses: 'phone' or 'email'. */
+    channel: (process.env.OTP_CHANNEL || 'phone').toLowerCase() === 'email' ? 'email' : 'phone',
+    /** Fallback length; the per-channel values below are what actually apply. */
     length: int(process.env.OTP_LENGTH, 4),
+    /** SMS codes are 6 digits by convention; email codes stay at 4. */
+    phoneLength: int(process.env.OTP_PHONE_LENGTH || process.env.OTP_LENGTH, 6),
+    emailLength: int(process.env.OTP_EMAIL_LENGTH || process.env.OTP_LENGTH, 4),
     expiresMinutes: int(process.env.OTP_EXPIRES_MINUTES, 10),
     debugReturn: bool(process.env.OTP_DEBUG_RETURN, false),
+    /** Digits for a given channel. */
+    lengthFor(type) {
+      return type === 'phone' ? this.phoneLength : this.emailLength
+    },
   },
+
+  /**
+   * Twilio. Leave empty and codes are printed to the server console instead.
+   *
+   * Two ways to authenticate:
+   *   1. API key (recommended) — TWILIO_API_KEY_SID (SK…) + TWILIO_API_KEY_SECRET.
+   *      Revocable on its own, so a leak doesn't mean rotating the whole account.
+   *   2. Account auth token — TWILIO_AUTH_TOKEN.
+   *
+   * TWILIO_ACCOUNT_SID (AC…) is required either way: it identifies the account
+   * in the request URL. An API key authenticates but does not identify it.
+   */
+  sms: (() => {
+    const accountSid = unquote(process.env.TWILIO_ACCOUNT_SID || '')
+    const apiKeySid = unquote(process.env.TWILIO_API_KEY_SID || '')
+    const apiKeySecret = unquote(process.env.TWILIO_API_KEY_SECRET || '')
+    const authToken = unquote(process.env.TWILIO_AUTH_TOKEN || '')
+
+    // API key takes precedence when both are present.
+    const username = apiKeySid || accountSid
+    const password = apiKeySid ? apiKeySecret : authToken
+
+    return {
+      accountSid,
+      apiKeySid,
+      username,
+      password,
+      authMode: apiKeySid ? 'api_key' : 'auth_token',
+      from: unquote(process.env.TWILIO_PHONE_NUMBER || ''),
+      messagingServiceSid: unquote(process.env.TWILIO_MESSAGING_SERVICE_SID || ''),
+      /**
+       * Verify service SID (VA…). When set, phone codes go through Twilio
+       * Verify — which uses Twilio's own global routes and sender IDs — rather
+       * than a raw SMS from our number. Required to reach the UAE.
+       */
+      verifyServiceSid: unquote(process.env.TWILIO_VERIFY_SERVICE_SID || ''),
+      useVerify: Boolean(
+        process.env.TWILIO_VERIFY_SERVICE_SID && accountSid && username && password
+      ),
+      // Verify needs no sender of our own, so it counts as configured on its own.
+      configured: Boolean(
+        accountSid &&
+          username &&
+          password &&
+          (process.env.TWILIO_PHONE_NUMBER ||
+            process.env.TWILIO_MESSAGING_SERVICE_SID ||
+            process.env.TWILIO_VERIFY_SERVICE_SID)
+      ),
+    }
+  })(),
 
   // Both naming styles are accepted: SMTP_* and the Laravel-style MAIL_*.
   mail: mailConfig(),

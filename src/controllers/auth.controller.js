@@ -126,6 +126,26 @@ async function register(req, res, role) {
 
   const token = signToken(user)
 
+  // With OTP_CHANNEL=phone the code goes out from /otp/send-phone once the
+  // user enters their number on the next screen — there is nothing to send
+  // yet here. With OTP_CHANNEL=email it is issued immediately.
+  if (env.otp.channel === 'phone') {
+    return success(
+      res,
+      {
+        user: serializeUser(user),
+        token,
+        verificationChannel: 'phone',
+        requiresPhoneVerification: true,
+        email: cleanEmail,
+        otpLength: env.otp.lengthFor('phone'),
+      },
+      'Account created. Enter your phone number to receive a verification code.',
+      201,
+      { token }
+    )
+  }
+
   // Email is queued in the background (mail.service never blocks the response).
   const otp = await otpService.issue({
     identifier: cleanEmail,
@@ -140,8 +160,10 @@ async function register(req, res, role) {
     {
       user: serializeUser(user),
       token,
+      verificationChannel: 'email',
       requiresEmailVerification: true,
       email: cleanEmail,
+      otpLength: otp.length,
       expiresAt: otp.expiresAt,
       debugCode: otp.debugCode,
     },

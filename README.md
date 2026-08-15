@@ -272,6 +272,31 @@ Measured locally: `/api/health` 8ms, `/api/otp/verify-email` 6ms,
 | POST | `/api/{client\|artist}/messages` | send (pushes over the socket) |
 | PATCH | `/api/{client\|artist}/messages/:appointmentId/read` | mark read |
 
+## SMS deliverability (important)
+
+A Twilio **US long code cannot deliver SMS to the UAE** — Twilio rejects it with
+error **21612** ("not reachable from the From number"). Pakistan works fine from
+the same number. This is a carrier/routing restriction, not something code can
+fix.
+
+To actually reach UAE numbers, one of:
+
+1. **Twilio Verify** (`https://verify.twilio.com`) — purpose-built for OTP and
+   uses Twilio's own global routes and sender IDs. Usually the quickest fix.
+2. **A registered alphanumeric Sender ID** for the UAE, pre-registered with the
+   carriers through Twilio. Takes days to weeks.
+3. **A regional provider** — Unifonic (UAE-based) or Msg91. Swapping is one
+   function in `src/services/sms.service.js`; nothing else changes.
+
+**Until then there is an automatic fallback:** when Twilio reports a message as
+undeliverable (`21612`, `21408`, `30003`, `30005`, `30006`, `21610`), the same
+code is emailed to the account's address instead, and the verify screen tells
+the user to check their email. Sign-up therefore still completes for UAE users.
+
+Note that Twilio accepts a message as `queued` and only reports a hard failure
+seconds later, so `sms.service` polls the message status briefly rather than
+assuming a queued message was delivered.
+
 ## Real-time chat
 
 Socket.IO authenticates with the same JWT (`socket.handshake.auth.token`) and

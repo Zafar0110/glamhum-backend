@@ -15,12 +15,16 @@ const sendLimiter = rateLimit({
   message: { success: false, message: 'Too many code requests. Please wait a few minutes.' },
 })
 
-// Email OTP (the live flow)
+// Phone OTP — what sign-up verification uses.
+// optionalAuth: the user may or may not already hold a token at this point.
+router.post('/send-phone', sendLimiter, optionalAuth, asyncHandler(controller.sendPhoneOTP))
+router.post('/verify-phone', optionalAuth, asyncHandler(controller.verifyPhoneOTP))
+
+// Email OTP — still used by forgot-password, and available if you switch
+// OTP_CHANNEL back to email.
 router.post('/send-email', sendLimiter, asyncHandler(controller.sendEmailOTP))
 router.post('/verify-email', asyncHandler(controller.verifyEmailOTP))
-router.post('/resend', sendLimiter, asyncHandler(controller.resendOTP))
 
-// Phone OTP — parked until SMS is enabled.
-router.post('/send-phone', optionalAuth, asyncHandler(controller.sendPhoneOTP))
+router.post('/resend', sendLimiter, optionalAuth, asyncHandler(controller.resendOTP))
 
 module.exports = router
