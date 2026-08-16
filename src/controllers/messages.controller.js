@@ -154,17 +154,35 @@ async function assertThreadAccess(appointmentId, user) {
   return appointment
 }
 
-/** GET /api/{client|artist}/messages/:appointmentId */
+/**
+ * GET /api/{client|artist}/messages/:appointmentId
+ *
+ * The appointment id names the thread, but the thread is the whole
+ * conversation with that PERSON — every message between the two of them,
+ * whichever booking it was sent against.
+ *
+ * getConversations groups by counterparty and sums unread across all their
+ * bookings, while exposing only the newest appointment as the thread id.
+ * Loading a single appointment therefore hid messages sent on an earlier
+ * booking, and marking that one appointment read left those messages unread
+ * forever — an "unseen" badge that could never be cleared.
+ */
 exports.getMessages = async (req, res) => {
-  await assertThreadAccess(req.params.appointmentId, req.user)
+  const appointment = await assertThreadAccess(req.params.appointmentId, req.user)
+  const otherId =
+    appointment.client_id === req.user.id ? appointment.artist_id : appointment.client_id
 
   const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 100))
 
   // `id` breaks ties so the order is stable even for messages that land in
   // the same millisecond.
   const rows = await query(
-    `SELECT * FROM messages WHERE appointment_id = ? ORDER BY created_at ASC, id ASC LIMIT ?`,
-    [req.params.appointmentId, String(limit)]
+    `SELECT * FROM messages
+      WHERE (sender_id = ? AND receiver_id = ?)
+         OR (sender_id = ? AND receiver_id = ?)
+      ORDER BY created_at ASC, id ASC
+      LIMIT ?`,
+    [req.user.id, otherId, otherId, req.user.id, String(limit)]
   )
 
   return success(res, { messages: rows.map(serializeMessage) }, 'OK', 200, { total: rows.length })
@@ -207,15 +225,39 @@ exports.sendMessage = async (req, res) => {
   return success(res, { message: payload }, 'Message sent', 201)
 }
 
-/** PATCH /api/{client|artist}/messages/:appointmentId/read */
+/**
+ * PATCH /api/{client|artist}/messages/:appointmentId/read
+ *
+ * Clears the whole conversation with that person, matching what getMessages
+ * just showed them. Scoping this to one appointment left messages from an
+ * earlier booking permanently unread, because no screen could open them.
+ */
 exports.markAsRead = async (req, res) => {
-  await assertThreadAccess(req.params.appointmentId, req.user)
+  const appointment = await assertThreadAccess(req.params.appointmentId, req.user)
+  const otherId =
+    appointment.client_id === req.user.id ? appointment.artist_id : appointment.client_id
 
   const result = await query(
     `UPDATE messages SET is_read = 1, read_at = NOW()
-      WHERE appointment_id = ? AND receiver_id = ? AND is_read = 0`,
-    [req.params.appointmentId, req.user.id]
+      WHERE receiver_id = ? AND sender_id = ? AND is_read = 0`,
+    [req.user.id, otherId]
   )
 
   return success(res, { updated: result.affectedRows || 0 }, 'Messages marked as read')
+}
+
+/**
+ * GET /api/{client|artist}/messages/unread-count
+ *
+ * One number for the Messages tab badge. Deliberately tiny — it is polled and
+ * re-fetched on every incoming socket message, so it must stay a single
+ * indexed count rather than loading conversations just to add them up.
+ */
+exports.getUnreadCount = async (req, res) => {
+  const row = await queryOne(
+    'SELECT COUNT(*) AS unread FROM messages WHERE receiver_id = ? AND is_read = 0',
+    [req.user.id]
+  )
+
+  return success(res, { unreadCount: Number(row?.unread || 0) })
 }

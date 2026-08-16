@@ -56,6 +56,8 @@ router.get('/reviews/:reviewId', notImplemented('artistAPI.getReviewById'))
 
 // --- messages ------------------------------------------------------------
 router.get('/messages/conversations', asyncHandler(messages.getConversations))
+// Registered before /messages/:appointmentId so the param route cannot swallow it.
+router.get('/messages/unread-count', asyncHandler(messages.getUnreadCount))
 router.get('/messages/:appointmentId', asyncHandler(messages.getMessages))
 router.post('/messages', asyncHandler(messages.sendMessage))
 router.patch('/messages/:appointmentId/read', asyncHandler(messages.markAsRead))
