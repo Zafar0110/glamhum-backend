@@ -35,6 +35,7 @@ router.get('/appointments', asyncHandler(controller.getAllAppointments))
 router.post('/appointments', asyncHandler(schedule.createAppointment))
 router.get('/appointments/:appointmentId', asyncHandler(controller.getAppointmentById))
 router.patch('/appointments/:appointmentId/status', asyncHandler(controller.updateAppointmentStatus))
+router.patch('/appointments/:appointmentId/reschedule', asyncHandler(schedule.rescheduleAppointment))
 
 // --- schedule: blocked time & vacations ----------------------------------
 router.get('/blocked-time', asyncHandler(schedule.getBlockedTime))

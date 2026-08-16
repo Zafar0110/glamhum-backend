@@ -11,7 +11,7 @@ const ApiError = require('../utils/ApiError')
 const { success } = require('../utils/response')
 const { serializeUser } = require('../utils/serializers')
 const { hydrateAppointments, parseAppointmentTime, addMinutes } = require('../services/appointments.service')
-const { checkSlot } = require('../services/availability.service')
+const { checkSlot, toMinutes } = require('../services/availability.service')
 
 function serializeBlockedTime(row) {
   if (!row) return null
@@ -353,4 +353,63 @@ exports.deleteVacation = async (req, res) => {
 
   await query('DELETE FROM vacations WHERE id = ?', [row.id])
   return success(res, {}, 'Vacation removed')
+}
+
+/**
+ * PATCH /api/artist/appointments/:appointmentId/reschedule
+ *
+ * Move an appointment to a new date/time. The new slot is checked against the
+ * rest of the calendar — excluding this appointment, or it would always clash
+ * with the slot it currently occupies.
+ */
+exports.rescheduleAppointment = async (req, res) => {
+  const { appointmentDate, appointmentTime, endTime } = req.body || {}
+
+  const errors = {}
+  if (!appointmentDate || !/^\d{4}-\d{2}-\d{2}$/.test(appointmentDate)) {
+    errors.appointmentDate = 'Choose a valid date'
+  }
+  if (!appointmentTime) errors.appointmentTime = 'Choose a start time'
+  if (Object.keys(errors).length) throw ApiError.validation(errors)
+
+  const appointment = await queryOne('SELECT * FROM appointments WHERE id = ? LIMIT 1', [
+    req.params.appointmentId,
+  ])
+  if (!appointment) throw ApiError.notFound('Appointment not found')
+  if (appointment.artist_id !== req.user.id) {
+    throw ApiError.forbidden('This appointment belongs to another artist')
+  }
+  if (['completed', 'cancelled'].includes(appointment.status)) {
+    throw ApiError.badRequest(`A ${appointment.status} appointment cannot be rescheduled.`)
+  }
+
+  const totalMinutes = Number(appointment.duration_minutes) || 60
+  const parsed = parseAppointmentTime(appointmentTime, totalMinutes)
+  const startTime = parsed.startTime
+  const finishTime = endTime ? `${String(endTime).slice(0, 5)}:00` : addMinutes(startTime, totalMinutes)
+
+  const slot = await checkSlot(req.user.id, appointmentDate, startTime, finishTime, {
+    excludeAppointmentId: appointment.id,
+  })
+  if (!slot.available) throw ApiError.conflict(slot.reason)
+
+  await query(
+    `UPDATE appointments
+        SET appointment_date = ?, start_time = ?, end_time = ?,
+            duration_minutes = ?
+      WHERE id = ?`,
+    [
+      appointmentDate,
+      startTime,
+      finishTime,
+      Math.max(15, Math.round((toMinutes(finishTime) - toMinutes(startTime)) || totalMinutes)),
+      appointment.id,
+    ]
+  )
+
+  const [updated] = await hydrateAppointments(
+    await query('SELECT * FROM appointments WHERE id = ?', [appointment.id])
+  )
+
+  return success(res, { appointment: updated }, 'Appointment rescheduled')
 }
