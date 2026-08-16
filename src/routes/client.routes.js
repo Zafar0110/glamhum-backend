@@ -20,6 +20,7 @@ router.patch('/bookings/:bookingId/cancel', asyncHandler(controller.cancelBookin
 
 // --- payments ------------------------------------------------------------
 router.post('/payments/prepare', asyncHandler(payments.preparePayment))
+router.post('/payments/prepare-booking', asyncHandler(payments.prepareBookingPayment))
 router.post('/payments/confirm', asyncHandler(payments.confirmPayment))
 router.post('/payments/process', asyncHandler(payments.processPayment))
 router.get('/payments/:paymentIntentId/status', asyncHandler(payments.getPaymentIntentStatus))

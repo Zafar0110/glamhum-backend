@@ -7,6 +7,8 @@ const { query, queryOne } = require('../config/db')
 const ApiError = require('../utils/ApiError')
 const { success, paginated } = require('../utils/response')
 const { absoluteUpload, serializeService } = require('../utils/serializers')
+const { checkSlot } = require('../services/availability.service')
+const { addMinutes } = require('../services/appointments.service')
 
 const VISIBLE = "role = 'artist' AND approval_status = 'approved' AND is_active = 1"
 
@@ -196,11 +198,42 @@ exports.getArtistById = async (req, res) => {
 }
 
 /**
- * GET /api/artists/:artistId/availability?date=YYYY-MM-DD
- * Returns the slots left after existing appointments, blocked time and
- * vacations are removed.
+ * GET /api/artists/:artistId/availability?date=YYYY-MM-DD&time=HH:MM-HH:MM
+ *
+ * Answers two different questions, and it matters which one is being asked:
+ *
+ *   with `time`  — "can I book THIS slot?" Checked against the real calendar.
+ *   without      — "what is left on this day?" Suggests the free day slots.
+ *
+ * The suggestion list alone is not an answer to the first question: it only
+ * covers 09:00–20:00, so a booking outside those hours (an early-morning
+ * 00:00–01:00, say) overlapped none of them and the day was reported free even
+ * though that exact slot was taken.
  */
 const DAY_SLOTS = ['09:00-11:00', '11:00-13:00', '14:00-16:00', '16:00-18:00', '18:00-20:00']
+
+/** 'HH:MM' | 'HH:MM-HH:MM' -> { startTime, endTime } in HH:MM:SS, or null. */
+function parseRequestedTime(raw) {
+  const value = String(raw || '').trim()
+  if (!value) return null
+
+  const [fromPart, toPart] = value.split('-').map((part) => part.trim())
+  const normalise = (part) => {
+    const match = /^(\d{1,2}):(\d{2})/.exec(part || '')
+    if (!match) return null
+    const hours = Number(match[1])
+    const minutes = Number(match[2])
+    if (hours > 23 || minutes > 59) return null
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
+  }
+
+  const startTime = normalise(fromPart)
+  if (!startTime) return null
+
+  // A single time means a one-hour slot, matching what booking assumes.
+  const endTime = normalise(toPart) || addMinutes(startTime, 60)
+  return { startTime, endTime }
+}
 
 exports.checkAvailability = async (req, res) => {
   const artist = await queryOne(`SELECT id FROM users WHERE id = ? AND ${VISIBLE} LIMIT 1`, [
@@ -213,11 +246,7 @@ exports.checkAvailability = async (req, res) => {
     throw ApiError.validation({ date: 'Provide a date as YYYY-MM-DD' })
   }
 
-  const [onVacation, appointments, blocked] = await Promise.all([
-    queryOne(
-      'SELECT id FROM vacations WHERE artist_id = ? AND ? BETWEEN start_date AND end_date LIMIT 1',
-      [artist.id, date]
-    ),
+  const [appointments, blocked] = await Promise.all([
     query(
       `SELECT start_time, end_time FROM appointments
         WHERE artist_id = ? AND appointment_date = ? AND status IN ('pending','confirmed')`,
@@ -229,10 +258,6 @@ exports.checkAvailability = async (req, res) => {
       [artist.id, date]
     ),
   ])
-
-  if (onVacation) {
-    return success(res, { available: false, timeSlots: [], reason: 'The artist is away on this date' })
-  }
 
   const toMinutes = (value) => {
     const [hours, minutes] = String(value).split(':').map(Number)
@@ -250,5 +275,46 @@ exports.checkAvailability = async (req, res) => {
     return !busy.some((period) => from < period.to && to > period.from)
   })
 
-  return success(res, { available: timeSlots.length > 0, timeSlots, date })
+  // What is already taken, so the client can be told WHY a time is refused.
+  const bookedPeriods = [...appointments, ...blocked]
+    .map((row) => ({
+      startTime: String(row.start_time).slice(0, 5),
+      endTime: String(row.end_time || row.start_time).slice(0, 5),
+    }))
+    .sort((a, b) => a.startTime.localeCompare(b.startTime))
+
+  const requested = parseRequestedTime(req.query.time)
+
+  // A specific time was asked about: answer that question, not a general one.
+  if (requested) {
+    const slot = await checkSlot(artist.id, date, requested.startTime, requested.endTime)
+    return success(res, {
+      available: slot.available,
+      reason: slot.reason,
+      conflicts: slot.conflicts,
+      requestedTime: `${requested.startTime.slice(0, 5)} - ${requested.endTime.slice(0, 5)}`,
+      // Offered as alternatives when the chosen time is gone.
+      timeSlots,
+      bookedPeriods,
+      date,
+    })
+  }
+
+  const onVacation = await queryOne(
+    'SELECT reason FROM vacations WHERE artist_id = ? AND ? BETWEEN start_date AND end_date LIMIT 1',
+    [artist.id, date]
+  )
+  if (onVacation) {
+    return success(res, {
+      available: false,
+      timeSlots: [],
+      bookedPeriods,
+      reason: onVacation.reason
+        ? `The artist is away on this date (${onVacation.reason})`
+        : 'The artist is away on this date',
+      date,
+    })
+  }
+
+  return success(res, { available: timeSlots.length > 0, timeSlots, bookedPeriods, date })
 }

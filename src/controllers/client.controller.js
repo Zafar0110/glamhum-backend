@@ -11,6 +11,7 @@ const {
   durationToMinutes,
   hydrateAppointments,
 } = require('../services/appointments.service')
+const { checkSlot } = require('../services/availability.service')
 
 const SERVICE_FEE = 150 // matches SERVICE_FEE on the booking screen
 
@@ -60,26 +61,14 @@ async function resolveBooking(body, clientId) {
     })
   }
 
-  // The artist must not already be booked at that time.
+  // The artist must actually be free then. One shared check covers existing
+  // appointments, time the artist has blocked out, and holidays — the same one
+  // the artist's own schedule uses, so the two cannot disagree.
   const totalMinutes = services.reduce((sum, s) => sum + (s.duration_minutes || durationToMinutes(s.duration) || 60), 0)
   const { startTime, endTime } = parseAppointmentTime(body.appointmentTime, totalMinutes)
 
-  const clash = await queryOne(
-    `SELECT id FROM appointments
-      WHERE artist_id = ? AND appointment_date = ? AND status IN ('pending','confirmed')
-        AND start_time < ? AND end_time > ?
-      LIMIT 1`,
-    [artist.id, body.appointmentDate, endTime, startTime]
-  )
-  if (clash) {
-    throw ApiError.conflict('That time slot has just been taken. Please choose another time.')
-  }
-
-  const onVacation = await queryOne(
-    'SELECT id FROM vacations WHERE artist_id = ? AND ? BETWEEN start_date AND end_date LIMIT 1',
-    [artist.id, body.appointmentDate]
-  )
-  if (onVacation) throw ApiError.conflict('The artist is away on that date. Please choose another.')
+  const slot = await checkSlot(artist.id, body.appointmentDate, startTime, endTime)
+  if (!slot.available) throw ApiError.conflict(slot.reason)
 
   const servicesTotal = services.reduce((sum, s) => sum + Number(s.price), 0)
 

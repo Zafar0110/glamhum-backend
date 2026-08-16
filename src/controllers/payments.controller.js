@@ -16,6 +16,8 @@ const { query, queryOne } = require('../config/db')
 const ApiError = require('../utils/ApiError')
 const { success, paginated } = require('../utils/response')
 const stripe = require('../services/stripe.service')
+const { checkSlot } = require('../services/availability.service')
+const { parseAppointmentTime } = require('../services/appointments.service')
 
 const SERVICE_FEE = 150
 
@@ -63,6 +65,19 @@ exports.preparePayment = async (req, res) => {
   const total = servicesTotal + SERVICE_FEE
   const currency = artist.currency || 'AED'
 
+  // Check the slot BEFORE the card is charged. The booking is only created
+  // after payment succeeds, so without this a client could pay for a time that
+  // was taken while they were typing their card details — money gone, no
+  // appointment, and a refund to chase.
+  if (req.body.appointmentDate) {
+    const totalMinutes =
+      services.reduce((sum, service) => sum + (Number(service.duration_minutes) || 60), 0) || 60
+    const { startTime, endTime } = parseAppointmentTime(req.body.appointmentTime, totalMinutes)
+
+    const slot = await checkSlot(artistId, req.body.appointmentDate, startTime, endTime)
+    if (!slot.available) throw ApiError.conflict(slot.reason)
+  }
+
   // ESCROW: the full amount is charged to the PLATFORM account and held there.
   // Nothing is sent to the artist at this point — the money is only released
   // when the artist marks the appointment completed (see releaseEscrow), so a
@@ -82,6 +97,59 @@ exports.preparePayment = async (req, res) => {
     paymentIntentId: intent.id,
     amount: total,
     currency,
+    publishableKey: env.stripe.publishableKey,
+  })
+}
+
+/**
+ * POST /api/client/payments/prepare-booking
+ *
+ * A PaymentIntent for a booking that already exists — the "Pay Booking" action
+ * on a pay-at-venue appointment the client decides to settle by card.
+ *
+ * Unlike preparePayment the appointment is already there, so the amount comes
+ * from the booking itself rather than being recalculated from services.
+ */
+exports.prepareBookingPayment = async (req, res) => {
+  if (!env.stripe.configured) {
+    throw ApiError.badRequest('Online payment is not available yet. Please pay at the venue.')
+  }
+
+  const { appointmentId } = req.body || {}
+  if (!appointmentId) throw ApiError.validation({ appointmentId: 'Booking is required' })
+
+  const appointment = await queryOne('SELECT * FROM appointments WHERE id = ? LIMIT 1', [appointmentId])
+  if (!appointment) throw ApiError.notFound('Booking not found')
+  if (appointment.client_id !== req.user.id) throw ApiError.forbidden('This booking is not yours')
+  if (appointment.payment_status === 'paid') throw ApiError.badRequest('This booking is already paid')
+  if (appointment.payment_status === 'refunded') {
+    throw ApiError.badRequest('This booking has been refunded and cannot be paid again')
+  }
+  if (appointment.status === 'cancelled') throw ApiError.badRequest('This booking was cancelled')
+  if (appointment.status === 'completed') {
+    throw ApiError.badRequest('This appointment is already finished — settle it with your artist directly')
+  }
+
+  const amount = Number(appointment.total_price)
+  if (amount <= 0) throw ApiError.badRequest('There is nothing to pay on this booking')
+
+  // Same escrow rule as a new booking: the money is held on the platform and
+  // only released when the artist marks the appointment completed.
+  const intent = await stripe.createPaymentIntent({
+    amount,
+    currency: appointment.currency || 'AED',
+    metadata: {
+      clientId: req.user.id,
+      artistId: appointment.artist_id,
+      appointmentId: appointment.id,
+    },
+  })
+
+  return success(res, {
+    clientSecret: intent.client_secret,
+    paymentIntentId: intent.id,
+    amount,
+    currency: appointment.currency || 'AED',
     publishableKey: env.stripe.publishableKey,
   })
 }
@@ -132,7 +200,12 @@ exports.processPayment = async (req, res) => {
     throw ApiError.badRequest(`Payment has not completed (status: ${intent.status})`)
   }
 
-  const payout = Number(appointment.total_price) - SERVICE_FEE - commissionFor(Number(appointment.total_price) - SERVICE_FEE)
+  // Take the fee from the BOOKING, not the constant. An appointment the artist
+  // added themselves carries no platform service fee, so subtracting a flat 150
+  // drove the payout negative: 100 − 150 − commission = −45 AED owed to the
+  // artist, recorded as a negative deposit.
+  const servicesTotal = Number(appointment.total_price) - Number(appointment.service_fee || 0)
+  const payout = servicesTotal - commissionFor(servicesTotal)
 
   await query(
     `UPDATE appointments
@@ -642,7 +715,8 @@ async function releaseEscrow(appointment) {
   const payout = Number(appointment.artist_payout_amount || 0)
   if (payout <= 0) return { released: false, reason: 'nothing_to_pay' }
 
-  const commission = commissionFor(Number(appointment.total_price) - SERVICE_FEE)
+  // Same rule as the payout itself: the fee is whatever the booking recorded.
+  const commission = commissionFor(Number(appointment.total_price) - Number(appointment.service_fee || 0))
 
   const connect = await queryOne(
     'SELECT stripe_account_id, transfers_enabled, payouts_enabled FROM stripe_accounts WHERE artist_id = ? LIMIT 1',

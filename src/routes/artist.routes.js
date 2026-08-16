@@ -8,6 +8,7 @@ const notImplemented = require('../utils/notImplemented')
 const controller = require('../controllers/artist.controller')
 const messages = require('../controllers/messages.controller')
 const payments = require('../controllers/payments.controller')
+const schedule = require('../controllers/schedule.controller')
 
 const router = express.Router()
 
@@ -26,23 +27,23 @@ router.post('/submit-profile', asyncHandler(controller.submitProfile))
 router.use(requireApprovedArtist)
 
 // --- clients -------------------------------------------------------------
-router.get('/clients', notImplemented('artistAPI.getAllClients'))
-router.get('/clients/:clientId', notImplemented('artistAPI.getClientById'))
+router.get('/clients', asyncHandler(schedule.getAllClients))
+router.get('/clients/:clientId', asyncHandler(schedule.getClientById))
 
 // --- appointments --------------------------------------------------------
 router.get('/appointments', asyncHandler(controller.getAllAppointments))
-router.post('/appointments', notImplemented('artistAPI.createAppointment'))
+router.post('/appointments', asyncHandler(schedule.createAppointment))
 router.get('/appointments/:appointmentId', asyncHandler(controller.getAppointmentById))
 router.patch('/appointments/:appointmentId/status', asyncHandler(controller.updateAppointmentStatus))
 
 // --- schedule: blocked time & vacations ----------------------------------
-router.get('/blocked-time', notImplemented('artistAPI.getBlockedTime'))
-router.post('/blocked-time', notImplemented('artistAPI.createBlockedTime'))
-router.delete('/blocked-time/:blockedTimeId', notImplemented('artistAPI.deleteBlockedTime'))
+router.get('/blocked-time', asyncHandler(schedule.getBlockedTime))
+router.post('/blocked-time', asyncHandler(schedule.createBlockedTime))
+router.delete('/blocked-time/:blockedTimeId', asyncHandler(schedule.deleteBlockedTime))
 
-router.get('/vacations', notImplemented('artistAPI.getVacations'))
-router.post('/vacations', notImplemented('artistAPI.createVacation'))
-router.delete('/vacations/:vacationId', notImplemented('artistAPI.deleteVacation'))
+router.get('/vacations', asyncHandler(schedule.getVacations))
+router.post('/vacations', asyncHandler(schedule.createVacation))
+router.delete('/vacations/:vacationId', asyncHandler(schedule.deleteVacation))
 
 // --- payments ------------------------------------------------------------
 router.get('/payments/stats', asyncHandler(payments.getPaymentStats))
