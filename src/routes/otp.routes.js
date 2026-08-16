@@ -27,4 +27,8 @@ router.post('/verify-email', asyncHandler(controller.verifyEmailOTP))
 
 router.post('/resend', sendLimiter, optionalAuth, asyncHandler(controller.resendOTP))
 
+// Polled by the verify screen: Twilio may only report a failure after the send
+// response has gone out, and the user still needs to be told.
+router.get('/delivery-status', asyncHandler(controller.getDeliveryStatus))
+
 module.exports = router

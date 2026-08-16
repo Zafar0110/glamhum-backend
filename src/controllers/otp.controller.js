@@ -115,10 +115,11 @@ exports.resendOTP = async (req, res) => {
         otpLength: sent.otpLength,
         provider: sent.provider,
         expiresAt: sent.expiresAt,
+        deliveredVia: sent.deliveredVia || 'phone',
         fallbackEmail: user.email,
         debugCode: sent.debugCode,
       },
-      'A new code has been sent to your phone'
+      deliveryMessage(sent, { phone: e164, email: user.email })
     )
   }
 
@@ -184,8 +185,22 @@ async function sendPhoneCode({ e164, user, purpose = 'signup' }) {
     provider: 'direct_sms',
     otpLength: result.length,
     expiresAt: result.expiresAt,
+    // 'phone' | 'email' | 'console' — where the code actually went, so the
+    // verify screen can tell the truth rather than always promising a text.
+    deliveredVia: result.deliveredVia,
     debugCode: result.debugCode,
   }
+}
+
+/** The message the verify screen shows, matched to the channel actually used. */
+function deliveryMessage(sent, { phone, email }) {
+  if (sent.deliveredVia === 'email') {
+    return `We couldn't deliver a text to ${phone}, so your code was emailed to ${email} instead.`
+  }
+  if (sent.deliveredVia === 'console') {
+    return 'Verification code generated. SMS is not configured yet — check the server console for the code.'
+  }
+  return `Verification code sent to ${phone}`
 }
 
 /**
@@ -237,14 +252,46 @@ exports.sendPhoneOTP = async (req, res) => {
       provider: sent.provider,
       expiresAt: sent.expiresAt,
       smsConfigured: env.sms.configured,
+      // Where the code actually went, so the screen can explain a fallback.
+      deliveredVia: sent.deliveredVia || 'phone',
       // The screen tells the user to check this inbox if no text arrives.
       fallbackEmail: user.email,
       debugCode: sent.debugCode,
     },
-    env.sms.configured
-      ? `Verification code sent to ${e164}`
-      : 'Verification code generated. SMS is not configured yet — check the server console for the code.'
+    deliveryMessage(sent, { phone: e164, email: user.email })
   )
+}
+
+/**
+ * GET /api/otp/delivery-status?phone=+9715...
+ *
+ * Twilio often accepts a message and only reports the failure seconds later,
+ * after the send response has already gone out. The verify screen polls this
+ * so it can still tell the user their code was emailed instead.
+ */
+exports.getDeliveryStatus = async (req, res) => {
+  const e164 = sms.toE164(req.query.phone, req.query.countryCode)
+  if (!sms.isValidPhone(e164)) throw ApiError.validation({ phone: 'Enter a valid phone number' })
+
+  const row = await queryOne(
+    `SELECT o.delivered_via, u.email
+       FROM otps o
+       LEFT JOIN users u ON u.id = o.user_id
+      WHERE o.identifier = ? AND o.consumed_at IS NULL
+      ORDER BY o.created_at DESC LIMIT 1`,
+    [e164]
+  )
+
+  const deliveredVia = row?.delivered_via || 'phone'
+  return success(res, {
+    phone: e164,
+    deliveredVia,
+    fallbackEmail: row?.email || null,
+    message:
+      deliveredVia === 'email'
+        ? `We couldn't deliver a text to ${e164}, so your code was emailed to ${row?.email} instead.`
+        : null,
+  })
 }
 
 /**

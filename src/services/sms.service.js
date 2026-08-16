@@ -113,6 +113,56 @@ async function confirmDelivery(sid, attempts = 4, delayMs = 2500) {
  * `onFailure` is called when Twilio reports the message could not be
  * delivered, so the caller can fall back to another channel.
  */
+/**
+ * Submit the message and wait only for Twilio to ACCEPT it.
+ *
+ * This is the fast half (a single API call). Twilio rejects an impossible
+ * route here — a US long code aimed at the UAE comes back as 21612 straight
+ * away — so the caller learns in time to tell the user which channel was
+ * actually used. The slow half (polling for final delivery) stays in the
+ * background via sendSmsAsync.
+ *
+ * Returns { ok, errorCode, errorMessage, sid, reason } and never throws.
+ */
+async function trySendSms({ to, body }) {
+  if (!env.sms.configured) {
+    console.log(`[sms] not configured — would have sent to ${to}: ${body}`)
+    return { ok: false, reason: 'not_configured' }
+  }
+
+  try {
+    const result = await deliver(to, body)
+    console.log(`[sms] queued for ${to} (${result.sid})`)
+    return { ok: true, sid: result.sid }
+  } catch (error) {
+    const code = error.twilioCode || null
+    console.error(`[sms] REJECTED for ${to}${code ? ` (error ${code})` : ''}: ${error.message}`)
+    return { ok: false, reason: 'rejected', errorCode: code, errorMessage: error.message }
+  }
+}
+
+/**
+ * Watch an already-queued message and call `onFailure` if Twilio later reports
+ * it undelivered. Used for failures that only surface after acceptance.
+ */
+function watchDelivery({ to, sid, onFailure }) {
+  setImmediate(async () => {
+    try {
+      const outcome = await confirmDelivery(sid)
+      if (outcome.ok) {
+        console.log(`[sms] ${to} -> ${outcome.status}`)
+        return
+      }
+      console.error(
+        `[sms] NOT DELIVERED to ${to} — status ${outcome.status}, error ${outcome.errorCode} ${outcome.errorMessage}`
+      )
+      if (onFailure) onFailure(outcome)
+    } catch (error) {
+      console.error(`[sms] delivery check failed for ${to}: ${error.message}`)
+    }
+  })
+}
+
 function sendSmsAsync({ to, body, onFailure }) {
   if (!env.sms.configured) {
     console.log(`[sms] not configured — would have sent to ${to}: ${body}`)
@@ -156,12 +206,12 @@ function sendSmsAsync({ to, body, onFailure }) {
 }
 
 /** The verification text itself. Kept short — one SMS segment is 160 chars. */
+function otpMessage(code) {
+  return `${code} is your GlamHub verification code. It expires in ${env.otp.expiresMinutes} minutes. Do not share it with anyone.`
+}
+
 function sendOtpSms({ to, code, onFailure }) {
-  sendSmsAsync({
-    to,
-    body: `${code} is your GlamHub verification code. It expires in ${env.otp.expiresMinutes} minutes. Do not share it with anyone.`,
-    onFailure,
-  })
+  sendSmsAsync({ to, body: otpMessage(code), onFailure })
 }
 
 /** True when the failure means SMS will never work for this number. */
@@ -248,6 +298,9 @@ async function sendSmsNow({ to, body }) {
 
 module.exports = {
   sendSmsAsync,
+  trySendSms,
+  watchDelivery,
+  otpMessage,
   startVerification,
   checkVerification,
   sendOtpSms,

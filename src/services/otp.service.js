@@ -14,6 +14,7 @@ const env = require('../config/env')
 const { query, queryOne } = require('../config/db')
 const ApiError = require('../utils/ApiError')
 const { sendOtpEmail } = require('./mail.service')
+const sms = require('./sms.service')
 const { sendOtpSms } = require('./sms.service')
 
 // Length depends on the channel: 6 digits for SMS (the convention people
@@ -61,39 +62,54 @@ async function issue({
     [otpId, userId, target, code, type, purpose, expiresAt]
   )
 
-  // Fire-and-forget delivery — neither channel blocks the response.
+  /**
+   * Send the SAME code by email when SMS cannot reach the number, so the user
+   * can finish signing up instead of waiting for a text that will never come.
+   */
+  const emailTheCodeInstead = async (why) => {
+    if (!fallbackEmail) {
+      console.error(`[otp] SMS to ${target} failed and no email is on file — user is stuck.`)
+      return false
+    }
+
+    console.warn(`[otp] SMS to ${target} failed (${why}); emailing the code to ${fallbackEmail} instead.`)
+    sendOtpEmail({ to: fallbackEmail, firstName, code, purpose })
+
+    // Record it so support (and the verify screen) can see why it came by email.
+    try {
+      await query("UPDATE otps SET delivered_via = 'email' WHERE id = ?", [otpId])
+    } catch (error) {
+      console.error('[otp] could not record the email fallback:', error.message)
+    }
+    return true
+  }
+
+  let deliveredVia = type
+
   if (type === 'email') {
+    // Fire-and-forget: the mailer never blocks the response.
     sendOtpEmail({ to: target, firstName, code, purpose })
   } else {
-    sendOtpSms({
-      to: target,
-      code,
-      /**
-       * Some countries cannot be reached from our sender number (UAE from a
-       * US long code fails with 21612, for example). Rather than leave the
-       * user staring at a screen waiting for a text that will never arrive,
-       * send the SAME code to their email so they can finish signing up.
-       */
-      onFailure: async (outcome) => {
-        if (!fallbackEmail) {
-          console.error(`[otp] SMS to ${target} failed and no email is on file — user is stuck.`)
-          return
-        }
+    // Awaited, but only the SUBMIT step — a single Twilio call. An impossible
+    // route (US long code -> UAE, 21612) is rejected right here, so the caller
+    // can tell the user the code went to their email instead of claiming a text
+    // is on its way. Confirming final delivery stays in the background.
+    const submitted = await sms.trySendSms({ to: target, body: sms.otpMessage(code) })
 
-        console.warn(
-          `[otp] SMS to ${target} failed (${outcome.errorCode || outcome.status}); ` +
-            `emailing the code to ${fallbackEmail} instead.`
-        )
-        sendOtpEmail({ to: fallbackEmail, firstName, code, purpose })
-
-        // Record it so support can see why the code arrived by email.
-        try {
-          await query('UPDATE otps SET type = ?, identifier = identifier WHERE id = ?', ['email', otpId])
-        } catch (error) {
-          console.error('[otp] could not record the email fallback:', error.message)
-        }
-      },
-    })
+    if (submitted.ok) {
+      sms.watchDelivery({
+        to: target,
+        sid: submitted.sid,
+        // A late failure still falls back; the verify screen picks it up from
+        // the delivery-status endpoint.
+        onFailure: (outcome) => emailTheCodeInstead(outcome.errorCode || outcome.status),
+      })
+    } else if (submitted.reason === 'not_configured') {
+      // Nothing to send with — the code is in the server log for development.
+      deliveredVia = 'console'
+    } else if (await emailTheCodeInstead(submitted.errorCode || submitted.errorMessage)) {
+      deliveredVia = 'email'
+    }
   }
 
   // Always visible in the server console during development.
@@ -103,6 +119,8 @@ async function issue({
     identifier: target,
     expiresAt,
     length,
+    /** 'phone' | 'email' | 'console' — where the code actually went. */
+    deliveredVia,
     debugCode: env.otp.debugReturn ? code : undefined,
   }
 }
