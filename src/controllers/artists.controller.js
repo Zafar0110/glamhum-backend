@@ -235,6 +235,9 @@ function parseRequestedTime(raw) {
   return { startTime, endTime }
 }
 
+exports.serializePublicArtist = serializePublicArtist
+exports.portfolioImagesFor = portfolioImagesFor
+
 exports.checkAvailability = async (req, res) => {
   const artist = await queryOne(`SELECT id FROM users WHERE id = ? AND ${VISIBLE} LIMIT 1`, [
     req.params.artistId,

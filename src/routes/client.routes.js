@@ -41,8 +41,10 @@ router.post('/messages', asyncHandler(messages.sendMessage))
 router.patch('/messages/:appointmentId/read', asyncHandler(messages.markAsRead))
 
 // --- favourites (client dashboard "Favorites" tab) -----------------------
-router.get('/favorites', notImplemented('clientAPI.getFavorites'))
-router.post('/favorites/:artistId', notImplemented('clientAPI.addFavorite'))
-router.delete('/favorites/:artistId', notImplemented('clientAPI.removeFavorite'))
+router.get('/favorites', asyncHandler(controller.getFavorites))
+// Registered before the :artistId routes so it cannot be swallowed by them.
+router.get('/favorites/:artistId/status', asyncHandler(controller.getFavoriteStatus))
+router.post('/favorites/:artistId', asyncHandler(controller.addFavorite))
+router.delete('/favorites/:artistId', asyncHandler(controller.removeFavorite))
 
 module.exports = router

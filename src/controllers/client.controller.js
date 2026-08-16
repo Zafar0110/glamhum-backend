@@ -477,3 +477,78 @@ exports.deleteReview = async (req, res) => {
 
   return success(res, {}, 'Review deleted')
 }
+
+// ---------------------------------------------------------------------------
+// Favourites — artists the client has saved
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/client/favorites
+ *
+ * Returns the saved artists in the SAME shape as the public directory, so the
+ * Favourites tab can reuse the artist card without a second mapper.
+ */
+exports.getFavorites = async (req, res) => {
+  const { serializePublicArtist, portfolioImagesFor } = require('./artists.controller')
+
+  const rows = await query(
+    `SELECT u.*, f.created_at AS favorited_at
+       FROM favorites f
+       JOIN users u ON u.id = f.artist_id
+      WHERE f.client_id = ?
+        AND u.role = 'artist' AND u.approval_status = 'approved' AND u.is_active = 1
+      ORDER BY f.created_at DESC`,
+    [req.user.id]
+  )
+
+  const images = await portfolioImagesFor(rows.map((row) => row.id))
+  const favorites = rows.map((row) => ({
+    ...serializePublicArtist(row, images.get(row.id) || []),
+    favoritedAt: row.favorited_at,
+    isFavorite: true,
+  }))
+
+  return success(res, { favorites, artists: favorites }, 'OK', 200, { total: favorites.length })
+}
+
+/**
+ * POST /api/client/favorites/:artistId
+ * Saving twice is not an error — the unique key makes this idempotent.
+ */
+exports.addFavorite = async (req, res) => {
+  const artist = await queryOne(
+    "SELECT id FROM users WHERE id = ? AND role = 'artist' AND approval_status = 'approved' AND is_active = 1 LIMIT 1",
+    [req.params.artistId]
+  )
+  if (!artist) throw ApiError.notFound('Artist not found')
+
+  await query(
+    'INSERT IGNORE INTO favorites (id, client_id, artist_id) VALUES (?, ?, ?)',
+    [uuid(), req.user.id, artist.id]
+  )
+
+  return success(res, { artistId: artist.id, isFavorite: true }, 'Saved to your favourites')
+}
+
+/** DELETE /api/client/favorites/:artistId */
+exports.removeFavorite = async (req, res) => {
+  await query('DELETE FROM favorites WHERE client_id = ? AND artist_id = ?', [
+    req.user.id,
+    req.params.artistId,
+  ])
+
+  return success(res, { artistId: req.params.artistId, isFavorite: false }, 'Removed from your favourites')
+}
+
+/**
+ * GET /api/client/favorites/:artistId/status
+ * Lets the artist profile page show the heart in the right state on load.
+ */
+exports.getFavoriteStatus = async (req, res) => {
+  const row = await queryOne(
+    'SELECT id FROM favorites WHERE client_id = ? AND artist_id = ? LIMIT 1',
+    [req.user.id, req.params.artistId]
+  )
+
+  return success(res, { artistId: req.params.artistId, isFavorite: Boolean(row) })
+}
