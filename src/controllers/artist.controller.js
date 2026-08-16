@@ -216,9 +216,21 @@ exports.getAppointmentById = async (req, res) => {
 }
 
 /**
- * GET /api/artist/reviews?rating=&page=&limit=
+ * GET /api/artist/reviews?rating=&sort=&startDate=&endDate=&page=&limit=
+ *
  * Feedback clients left after their appointments completed.
+ *
+ * Sorting and date filtering happen here, over every review, rather than in the
+ * browser over the page already fetched — sorting one page of six by "highest
+ * rating" only reorders those six and hides the actual best reviews on page 2.
  */
+const REVIEW_SORTS = {
+  highest: 'r.rating DESC, r.created_at DESC',
+  lowest: 'r.rating ASC, r.created_at DESC',
+  newest: 'r.created_at DESC',
+  oldest: 'r.created_at ASC',
+}
+
 exports.getArtistReviews = async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1)
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10))
@@ -232,6 +244,18 @@ exports.getArtistReviews = async (req, res) => {
     where.push('r.rating = ?')
     params.push(rating)
   }
+
+  if (req.query.startDate) {
+    where.push('r.created_at >= ?')
+    params.push(`${req.query.startDate} 00:00:00`)
+  }
+  if (req.query.endDate) {
+    where.push('r.created_at <= ?')
+    params.push(`${req.query.endDate} 23:59:59`)
+  }
+
+  // Whitelisted: the value is interpolated into the query.
+  const orderBy = REVIEW_SORTS[req.query.sort] || REVIEW_SORTS.newest
 
   const whereSql = `WHERE ${where.join(' AND ')}`
 
@@ -247,7 +271,7 @@ exports.getArtistReviews = async (req, res) => {
          JOIN users u ON u.id = r.client_id
          LEFT JOIN appointments a ON a.id = r.appointment_id
          ${whereSql}
-        ORDER BY r.created_at DESC
+        ORDER BY ${orderBy}
         LIMIT ? OFFSET ?`,
       [...params, String(limit), String(offset)]
     ),
