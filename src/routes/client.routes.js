@@ -30,6 +30,7 @@ router.post('/payments/refund', asyncHandler(payments.refundPayment))
 router.get('/reviews', asyncHandler(controller.getMyReviews))
 router.post('/reviews', asyncHandler(controller.createReview))
 router.patch('/reviews/:reviewId', asyncHandler(controller.updateReview))
+router.delete('/reviews/:reviewId', asyncHandler(controller.deleteReview))
 
 // --- messages ------------------------------------------------------------
 router.get('/messages/conversations', asyncHandler(messages.getConversations))

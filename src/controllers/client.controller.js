@@ -460,3 +460,20 @@ exports.getMyReviews = async (req, res) => {
 
   return paginated(res, { reviews }, { total, page, limit })
 }
+
+/**
+ * DELETE /api/client/reviews/:reviewId
+ *
+ * Removing a review frees the booking to be reviewed again, and the artist's
+ * cached rating is recomputed so it never counts a review that is gone.
+ */
+exports.deleteReview = async (req, res) => {
+  const review = await queryOne('SELECT * FROM reviews WHERE id = ? LIMIT 1', [req.params.reviewId])
+  if (!review) throw ApiError.notFound('Review not found')
+  if (review.client_id !== req.user.id) throw ApiError.forbidden('That review is not yours')
+
+  await query('DELETE FROM reviews WHERE id = ?', [review.id])
+  await refreshArtistRating(review.artist_id)
+
+  return success(res, {}, 'Review deleted')
+}
