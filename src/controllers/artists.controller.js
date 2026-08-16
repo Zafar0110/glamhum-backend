@@ -87,6 +87,29 @@ exports.getArtists = async (req, res) => {
     params.push(maxPrice)
   }
 
+  const minRating = parseFloat(req.query.minRating)
+  if (!Number.isNaN(minRating) && minRating > 0) {
+    where.push('rating >= ?')
+    params.push(minRating)
+  }
+
+  // Where the artist works. Ticking BOTH (or neither) means "no preference" —
+  // combining them as AND would ask for has_studio = 1 AND 0 and return nothing.
+  const wantsStudio = req.query.hasStudio === 'true'
+  const wantsTravel = req.query.travelsToVenue === 'true'
+  if (wantsStudio && !wantsTravel) where.push('has_studio = 1')
+  if (wantsTravel && !wantsStudio) where.push('has_studio = 0')
+
+  // "Available on this date" — an artist away on holiday is not.
+  const availableOn = (req.query.availableOn || '').trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(availableOn)) {
+    where.push(
+      `NOT EXISTS (SELECT 1 FROM vacations v
+                    WHERE v.artist_id = users.id AND ? BETWEEN v.start_date AND v.end_date)`
+    )
+    params.push(availableOn)
+  }
+
   const whereSql = `WHERE ${where.join(' AND ')}`
 
   // Whitelisted so sortBy can never be injected.
