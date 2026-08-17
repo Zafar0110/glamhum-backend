@@ -449,7 +449,10 @@ exports.getAllTransactions = async (req, res) => {
     params.push(startDate)
   }
   if (endDate) {
-    where.push('t.created_at <= ?')
+    // Compare on the date alone. `created_at <= '2026-08-17'` means midnight,
+    // so every transaction made on the last day of the range — today, for
+    // "this month" — was filtered out.
+    where.push('DATE(t.created_at) <= ?')
     params.push(endDate)
   }
 
