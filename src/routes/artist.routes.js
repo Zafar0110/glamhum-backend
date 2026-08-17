@@ -40,10 +40,12 @@ router.patch('/appointments/:appointmentId/reschedule', asyncHandler(schedule.re
 // --- schedule: blocked time & vacations ----------------------------------
 router.get('/blocked-time', asyncHandler(schedule.getBlockedTime))
 router.post('/blocked-time', asyncHandler(schedule.createBlockedTime))
+router.patch('/blocked-time/:blockedTimeId', asyncHandler(schedule.updateBlockedTime))
 router.delete('/blocked-time/:blockedTimeId', asyncHandler(schedule.deleteBlockedTime))
 
 router.get('/vacations', asyncHandler(schedule.getVacations))
 router.post('/vacations', asyncHandler(schedule.createVacation))
+router.patch('/vacations/:vacationId', asyncHandler(schedule.updateVacation))
 router.delete('/vacations/:vacationId', asyncHandler(schedule.deleteVacation))
 
 // --- payments ------------------------------------------------------------

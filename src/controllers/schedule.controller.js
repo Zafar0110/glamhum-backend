@@ -269,6 +269,64 @@ exports.createBlockedTime = async (req, res) => {
   return success(res, { blockedTime: serializeBlockedTime(row) }, 'Time blocked', 201)
 }
 
+/**
+ * PATCH /api/artist/blocked-time/:blockedTimeId
+ *
+ * Only the fields present in the body are touched, so the client can send just
+ * what the artist edited.
+ */
+exports.updateBlockedTime = async (req, res) => {
+  const row = await queryOne('SELECT * FROM blocked_times WHERE id = ? LIMIT 1', [
+    req.params.blockedTimeId,
+  ])
+  if (!row) throw ApiError.notFound('That blocked time no longer exists')
+  if (row.artist_id !== req.user.id) throw ApiError.forbidden('That blocked time is not yours')
+
+  const { startDate, endDate, startTime, endTime, duration, reason } = req.body || {}
+
+  const nextStartDate = startDate || row.start_date
+  const nextEndDate = endDate || startDate || row.end_date
+  const nextStart = startTime ? `${String(startTime).slice(0, 5)}:00` : row.start_time
+  const nextDuration = duration !== undefined ? duration : row.duration
+
+  // An explicit end time wins; otherwise re-derive it from the duration so an
+  // edited duration actually moves the end of the block.
+  let nextEnd
+  if (endTime) {
+    nextEnd = `${String(endTime).slice(0, 5)}:00`
+  } else if (startTime || duration !== undefined) {
+    const hours = /(\d+)\s*hour/i.exec(String(nextDuration || ''))
+    nextEnd = addMinutes(nextStart, hours ? parseInt(hours[1], 10) * 60 : 60)
+  } else {
+    nextEnd = row.end_time
+  }
+
+  if (String(nextEndDate) < String(nextStartDate)) {
+    throw ApiError.validation({ endDate: 'The end date cannot be before the start date' })
+  }
+  if (toMinutes(String(nextEnd).slice(0, 5)) <= toMinutes(String(nextStart).slice(0, 5))) {
+    throw ApiError.validation({ endTime: 'The end time must be after the start time' })
+  }
+
+  await query(
+    `UPDATE blocked_times
+        SET start_date = ?, end_date = ?, start_time = ?, end_time = ?, duration = ?, reason = ?
+      WHERE id = ?`,
+    [
+      nextStartDate,
+      nextEndDate,
+      nextStart,
+      nextEnd,
+      nextDuration || null,
+      reason !== undefined ? reason || null : row.reason,
+      row.id,
+    ]
+  )
+
+  const updated = await queryOne('SELECT * FROM blocked_times WHERE id = ?', [row.id])
+  return success(res, { blockedTime: serializeBlockedTime(updated) }, 'Blocked time updated')
+}
+
 /** DELETE /api/artist/blocked-time/:blockedTimeId */
 exports.deleteBlockedTime = async (req, res) => {
   const row = await queryOne('SELECT * FROM blocked_times WHERE id = ? LIMIT 1', [
@@ -342,6 +400,45 @@ exports.createVacation = async (req, res) => {
       ? `Vacation saved. You still have ${clashes} appointment(s) booked in that period.`
       : 'Vacation saved',
     201
+  )
+}
+
+/** PATCH /api/artist/vacations/:vacationId */
+exports.updateVacation = async (req, res) => {
+  const row = await queryOne('SELECT * FROM vacations WHERE id = ? LIMIT 1', [req.params.vacationId])
+  if (!row) throw ApiError.notFound('That vacation no longer exists')
+  if (row.artist_id !== req.user.id) throw ApiError.forbidden('That vacation is not yours')
+
+  const { startDate, endDate, reason } = req.body || {}
+
+  const nextStartDate = startDate || row.start_date
+  const nextEndDate = endDate || row.end_date
+  if (String(nextEndDate) < String(nextStartDate)) {
+    throw ApiError.validation({ endDate: 'The end date cannot be before the start date' })
+  }
+
+  await query('UPDATE vacations SET start_date = ?, end_date = ?, reason = ? WHERE id = ?', [
+    nextStartDate,
+    nextEndDate,
+    reason !== undefined ? reason || null : row.reason,
+    row.id,
+  ])
+
+  // Same warning as on create: the artist may still have bookings in the period.
+  const [{ clashes }] = await query(
+    `SELECT COUNT(*) AS clashes FROM appointments
+      WHERE artist_id = ? AND status IN ('pending','confirmed')
+        AND appointment_date BETWEEN ? AND ?`,
+    [req.user.id, nextStartDate, nextEndDate]
+  )
+
+  const updated = await queryOne('SELECT * FROM vacations WHERE id = ?', [row.id])
+  return success(
+    res,
+    { vacation: serializeVacation(updated), existingAppointments: Number(clashes) },
+    Number(clashes)
+      ? `Vacation updated. You still have ${clashes} appointment(s) booked in that period.`
+      : 'Vacation updated'
   )
 }
 
