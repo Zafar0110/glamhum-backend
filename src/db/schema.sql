@@ -246,17 +246,24 @@ CREATE TABLE IF NOT EXISTS vacations (
 CREATE TABLE IF NOT EXISTS transactions (
   id             CHAR(36)      NOT NULL PRIMARY KEY,
   artist_id      CHAR(36)      NOT NULL,
+  -- Who paid. Null for withdrawals, which have no client side.
+  client_id      CHAR(36)      NULL,
   appointment_id CHAR(36)      NULL,
-  type           ENUM('booking_payment','payout','withdrawal','refund') NOT NULL,
-  status         ENUM('pending','completed','failed') NOT NULL DEFAULT 'pending',
+  -- 'deposit' is money in from a client; it sits 'pending' while held in
+  -- escrow and becomes 'succeeded' when the appointment completes.
+  type           ENUM('deposit','booking_payment','payout','withdrawal','refund') NOT NULL,
+  status         ENUM('pending','in_transit','succeeded','completed','failed') NOT NULL DEFAULT 'pending',
   amount         DECIMAL(10,2) NOT NULL,
   currency       CHAR(3)       NOT NULL DEFAULT 'AED',
   description    VARCHAR(255)  NULL,
   reference      VARCHAR(120)  NULL,
+  -- Bank details supplied with a manual withdrawal request.
+  bank_details   JSON          NULL,
   created_at     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   KEY idx_txn_artist (artist_id, created_at),
   CONSTRAINT fk_txn_artist FOREIGN KEY (artist_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_txn_client FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT fk_txn_appt FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -283,6 +290,9 @@ CREATE TABLE IF NOT EXISTS stripe_accounts (
   stripe_account_id   VARCHAR(120) NOT NULL,
   charges_enabled     TINYINT(1)   NOT NULL DEFAULT 0,
   payouts_enabled     TINYINT(1)   NOT NULL DEFAULT 0,
+  -- Outside card_payments countries (the UAE included) an Express account only
+  -- gets `transfers`, and that is what escrow release depends on.
+  transfers_enabled   TINYINT(1)   NOT NULL DEFAULT 0,
   onboarding_complete TINYINT(1)   NOT NULL DEFAULT 0,
   requirements_due    JSON         NULL,
   created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,

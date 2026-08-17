@@ -26,6 +26,26 @@ const ADDED_COLUMNS = [
   ['appointments', 'stripe_charge_id', 'VARCHAR(120) NULL AFTER payment_intent_id'],
   ['appointments', 'stripe_transfer_id', 'VARCHAR(120) NULL AFTER stripe_charge_id'],
   ['otps', 'delivered_via', "VARCHAR(10) NOT NULL DEFAULT 'phone' AFTER type"],
+  ['transactions', 'client_id', 'CHAR(36) NULL AFTER artist_id'],
+  ['transactions', 'bank_details', 'JSON NULL AFTER reference'],
+  ['stripe_accounts', 'transfers_enabled', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER payouts_enabled'],
+]
+
+/**
+ * ENUMs that gained values after the first release. MODIFY is idempotent —
+ * re-running simply sets the same definition again.
+ */
+const WIDENED_ENUMS = [
+  [
+    'transactions',
+    'type',
+    "ENUM('deposit','booking_payment','payout','withdrawal','refund') NOT NULL",
+  ],
+  [
+    'transactions',
+    'status',
+    "ENUM('pending','in_transit','succeeded','completed','failed') NOT NULL DEFAULT 'pending'",
+  ],
 ]
 
 async function addMissingColumns(connection, database) {
@@ -39,6 +59,23 @@ async function addMissingColumns(connection, database) {
 
     await connection.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`)
     console.log(`[migrate] added ${table}.${column}`)
+  }
+
+  for (const [table, column, definition] of WIDENED_ENUMS) {
+    const [rows] = await connection.query(
+      `SELECT COLUMN_TYPE AS t FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1`,
+      [database, table, column]
+    )
+    if (!rows.length) continue
+
+    // Only touch it when a value the code uses is not yet allowed.
+    const current = String(rows[0].t)
+    const needed = definition.match(/ENUM\(([^)]*)\)/i)[1].split(',').map((v) => v.trim())
+    if (needed.every((value) => current.includes(value))) continue
+
+    await connection.query(`ALTER TABLE \`${table}\` MODIFY COLUMN \`${column}\` ${definition}`)
+    console.log(`[migrate] widened ${table}.${column}`)
   }
 }
 
