@@ -127,6 +127,10 @@ CREATE TABLE IF NOT EXISTS appointments (
   payment_method       ENUM('pay_now','pay_at_venue') NOT NULL DEFAULT 'pay_at_venue',
   payment_status       ENUM('unpaid','pending','paid','refunded') NOT NULL DEFAULT 'unpaid',
   payment_intent_id    VARCHAR(120)  NULL,
+  -- Escrow: the charge the client's money sits in, and the transfer that
+  -- releases the artist's share when the appointment is completed.
+  stripe_charge_id     VARCHAR(120)  NULL,
+  stripe_transfer_id   VARCHAR(120)  NULL,
   artist_payout_status ENUM('not_applicable','pending','released','refunded') NOT NULL DEFAULT 'not_applicable',
   artist_payout_amount DECIMAL(10,2) NULL,
   notes                TEXT          NULL,
@@ -311,6 +315,9 @@ CREATE TABLE IF NOT EXISTS otps (
   identifier  VARCHAR(190) NOT NULL,  -- phone number or email the code was sent to
   code        VARCHAR(10)  NOT NULL,
   type        ENUM('phone','email') NOT NULL DEFAULT 'phone',
+  -- Which channel actually carried the code. An SMS that cannot be delivered
+  -- falls back to email, and the verify screen needs to say so.
+  delivered_via VARCHAR(10) NOT NULL DEFAULT 'phone',
   purpose     ENUM('signup','forgot_password','update_contact') NOT NULL DEFAULT 'signup',
   expires_at  DATETIME     NOT NULL,
   consumed_at DATETIME     NULL,

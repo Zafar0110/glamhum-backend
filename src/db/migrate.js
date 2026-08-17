@@ -12,6 +12,36 @@ const env = require('../config/env')
 
 const FRESH = process.argv.includes('--fresh')
 
+/**
+ * Columns added after the first release.
+ *
+ * schema.sql uses CREATE TABLE IF NOT EXISTS, which does nothing to a table
+ * that already exists — so a column added later never reaches a database that
+ * was migrated before. That is exactly how a live server ended up without
+ * `appointments.stripe_charge_id` and rejected every card booking with a SQL
+ * error. Each entry below is applied only when the column is missing, so this
+ * is safe to re-run and safe on a fresh install.
+ */
+const ADDED_COLUMNS = [
+  ['appointments', 'stripe_charge_id', 'VARCHAR(120) NULL AFTER payment_intent_id'],
+  ['appointments', 'stripe_transfer_id', 'VARCHAR(120) NULL AFTER stripe_charge_id'],
+  ['otps', 'delivered_via', "VARCHAR(10) NOT NULL DEFAULT 'phone' AFTER type"],
+]
+
+async function addMissingColumns(connection, database) {
+  for (const [table, column, definition] of ADDED_COLUMNS) {
+    const [rows] = await connection.query(
+      `SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1`,
+      [database, table, column]
+    )
+    if (rows.length) continue
+
+    await connection.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`)
+    console.log(`[migrate] added ${table}.${column}`)
+  }
+}
+
 async function main() {
   const { host, port, user, password, database } = env.db
 
@@ -39,6 +69,8 @@ async function main() {
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8')
   await connection.query(schema)
   console.log('[migrate] schema applied')
+
+  await addMissingColumns(connection, database)
 
   const [tables] = await connection.query('SHOW TABLES')
   console.log(`[migrate] ${tables.length} tables:`, tables.map((row) => Object.values(row)[0]).join(', '))
