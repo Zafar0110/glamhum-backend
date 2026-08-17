@@ -27,6 +27,7 @@ function serializePublicArtist(row, portfolioImages = []) {
     hasStudio: Boolean(row.has_studio),
     description: row.description || '',
     specialty: row.specialty || '',
+    yearsOfExperience: Number(row.years_of_experience || 0),
     rating: Number(row.rating || 0),
     totalReviews: Number(row.total_reviews || 0),
     pricing: {
@@ -166,8 +167,15 @@ exports.getArtistById = async (req, res) => {
   ])
   if (!artist) throw ApiError.notFound('Artist not found or not accepting bookings yet')
 
-  // Three independent reads in parallel rather than one after another.
-  const [services, images, reviewRows, categories] = await Promise.all([
+  // Today, as a local calendar date — past blocks/vacations are not news to a
+  // client deciding whether to book.
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(
+    today.getDate()
+  ).padStart(2, '0')}`
+
+  // Independent reads in parallel rather than one after another.
+  const [services, images, reviewRows, categories, vacationRows, blockedRows] = await Promise.all([
     query('SELECT * FROM services WHERE artist_id = ? AND is_active = 1 ORDER BY price ASC', [artist.id]),
     query('SELECT image_url FROM portfolio_images WHERE artist_id = ? ORDER BY sort_order ASC, created_at ASC', [artist.id]),
     query(
@@ -186,6 +194,18 @@ exports.getArtistById = async (req, res) => {
               COUNT(*) AS total, AVG(rating) AS overall
          FROM reviews WHERE artist_id = ?`,
       [artist.id]
+    ),
+    query(
+      `SELECT start_date, end_date FROM vacations
+        WHERE artist_id = ? AND end_date >= ?
+        ORDER BY start_date ASC LIMIT 12`,
+      [artist.id, todayStr]
+    ),
+    query(
+      `SELECT start_date, end_date, start_time, end_time FROM blocked_times
+        WHERE artist_id = ? AND end_date >= ?
+        ORDER BY start_date ASC, start_time ASC LIMIT 20`,
+      [artist.id, todayStr]
     ),
   ])
 
@@ -213,10 +233,38 @@ exports.getArtistById = async (req, res) => {
     createdAt: row.created_at,
   }))
 
+  /**
+   * Upcoming unavailability, so a client can see when this artist is away
+   * before picking a date.
+   *
+   * Dates and times only — the artist's own reason for a vacation or a blocked
+   * slot is private and is deliberately not exposed on a public page.
+   */
+  const toDate = (value) =>
+    value instanceof Date
+      ? `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(
+          value.getDate()
+        ).padStart(2, '0')}`
+      : String(value || '').slice(0, 10)
+
+  const unavailability = {
+    vacations: vacationRows.map((row) => ({
+      startDate: toDate(row.start_date),
+      endDate: toDate(row.end_date),
+    })),
+    blockedTimes: blockedRows.map((row) => ({
+      startDate: toDate(row.start_date),
+      endDate: toDate(row.end_date),
+      startTime: String(row.start_time || '').slice(0, 5),
+      endTime: String(row.end_time || '').slice(0, 5),
+    })),
+  }
+
   return success(res, {
     artist: payload,
     services: services.map((row) => serializeService(row)),
     reviews,
+    unavailability,
   })
 }
 

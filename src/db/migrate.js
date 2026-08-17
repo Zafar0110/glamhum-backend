@@ -29,6 +29,9 @@ const ADDED_COLUMNS = [
   ['transactions', 'client_id', 'CHAR(36) NULL AFTER artist_id'],
   ['transactions', 'bank_details', 'JSON NULL AFTER reference'],
   ['stripe_accounts', 'transfers_enabled', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER payouts_enabled'],
+  // The artist profile form had a "Years of Experience" field all along, but
+  // there was no column behind it, so nothing was ever saved.
+  ['users', 'years_of_experience', 'TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER specialty'],
 ]
 
 /**

@@ -238,6 +238,7 @@ exports.updateProfile = async (req, res) => {
     hasStudio: 'has_studio',
     address: 'address',
     specialty: 'specialty',
+    yearsOfExperience: 'years_of_experience',
   }
 
   const sets = []

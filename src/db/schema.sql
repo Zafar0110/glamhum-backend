@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS users (
   has_studio        TINYINT(1)    NULL,
   description       TEXT          NULL,
   specialty         VARCHAR(60)   NULL,
+  years_of_experience TINYINT UNSIGNED NOT NULL DEFAULT 0,
   min_price         DECIMAL(10,2) NULL,
   currency          CHAR(3)       NULL DEFAULT 'AED',
   rating            DECIMAL(3,2)  NOT NULL DEFAULT 0.00,
