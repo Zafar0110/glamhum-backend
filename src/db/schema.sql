@@ -85,6 +85,8 @@ CREATE TABLE IF NOT EXISTS service_addons (
   service_id CHAR(36)      NOT NULL,
   name       VARCHAR(160)  NOT NULL,
   price      DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  currency   CHAR(3)       NOT NULL DEFAULT 'AED',
+  duration   VARCHAR(20)   NULL,
   created_at DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   KEY idx_addons_service (service_id),

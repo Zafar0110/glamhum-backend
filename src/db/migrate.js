@@ -32,6 +32,10 @@ const ADDED_COLUMNS = [
   // The artist profile form had a "Years of Experience" field all along, but
   // there was no column behind it, so nothing was ever saved.
   ['users', 'years_of_experience', 'TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER specialty'],
+  // The add-on form has always had currency and duration pickers, but there
+  // were no columns behind them, so both were dropped on save.
+  ['service_addons', 'currency', "CHAR(3) NOT NULL DEFAULT 'AED' AFTER price"],
+  ['service_addons', 'duration', 'VARCHAR(20) NULL AFTER currency'],
 ]
 
 /**

@@ -81,7 +81,14 @@ function serializeService(row, addOns = []) {
     duration: row.duration,
     // false = archived: kept for history but hidden from clients.
     isActive: row.is_active === undefined ? true : Boolean(row.is_active),
-    addOns: addOns.map((addOn) => ({ name: addOn.name, price: Number(addOn.price) })),
+    addOns: addOns.map((addOn) => ({
+      id: addOn.id,
+      name: addOn.name,
+      price: Number(addOn.price),
+      // The add-on form has always offered these two; they now survive a save.
+      currency: addOn.currency || row.currency || 'AED',
+      duration: addOn.duration || '',
+    })),
   }
 }
 

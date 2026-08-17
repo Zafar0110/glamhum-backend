@@ -48,7 +48,8 @@ async function withAddOns(serviceRows) {
   const ids = serviceRows.map((row) => row.id)
   const placeholders = ids.map(() => '?').join(',')
   const addOns = await query(
-    `SELECT id, service_id, name, price FROM service_addons WHERE service_id IN (${placeholders})`,
+    `SELECT id, service_id, name, price, currency, duration
+       FROM service_addons WHERE service_id IN (${placeholders})`,
     ids
   )
 
@@ -68,8 +69,16 @@ async function replaceAddOns(connection, serviceId, addOns) {
   const rows = (addOns || []).filter((addOn) => addOn && String(addOn.name || '').trim())
   for (const addOn of rows) {
     await connection.execute(
-      'INSERT INTO service_addons (id, service_id, name, price) VALUES (?, ?, ?, ?)',
-      [uuid(), serviceId, String(addOn.name).trim(), Number(addOn.price) || 0]
+      `INSERT INTO service_addons (id, service_id, name, price, currency, duration)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        uuid(),
+        serviceId,
+        String(addOn.name).trim(),
+        Number(addOn.price) || 0,
+        String(addOn.currency || 'AED').slice(0, 3).toUpperCase(),
+        addOn.duration ? String(addOn.duration).slice(0, 20) : null,
+      ]
     )
   }
 }
@@ -240,13 +249,15 @@ exports.duplicateService = async (req, res) => {
     )
 
     // Copy the add-ons too — a duplicate without them is not a duplicate.
-    const addOns = await query('SELECT name, price FROM service_addons WHERE service_id = ?', [
-      original.id,
-    ])
+    const addOns = await query(
+      'SELECT name, price, currency, duration FROM service_addons WHERE service_id = ?',
+      [original.id]
+    )
     for (const addOn of addOns) {
       await connection.execute(
-        'INSERT INTO service_addons (id, service_id, name, price) VALUES (?, ?, ?, ?)',
-        [uuid(), newId, addOn.name, addOn.price]
+        `INSERT INTO service_addons (id, service_id, name, price, currency, duration)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [uuid(), newId, addOn.name, addOn.price, addOn.currency || 'AED', addOn.duration]
       )
     }
   })
