@@ -36,7 +36,12 @@ const ADDED_COLUMNS = [
   // were no columns behind them, so both were dropped on save.
   ['service_addons', 'currency', "CHAR(3) NOT NULL DEFAULT 'AED' AFTER price"],
   ['service_addons', 'duration', 'VARCHAR(20) NULL AFTER currency'],
+  // Readable artist profile URLs. Backfilled below for existing artists.
+  ['users', 'slug', 'VARCHAR(160) NULL AFTER specialty'],
 ]
+
+/** Unique indexes added after the first release. */
+const ADDED_UNIQUE_INDEXES = [['users', 'uq_users_slug', 'slug']]
 
 /**
  * ENUMs that gained values after the first release. MODIFY is idempotent —
@@ -86,6 +91,62 @@ async function addMissingColumns(connection, database) {
   }
 }
 
+/**
+ * Give every artist a profile slug.
+ *
+ * Runs before the unique index is added, and skips anyone who already has one,
+ * so it is safe to re-run. A duplicate slug (two artists with the same name AND
+ * username, which the username's own unique index already prevents) would only
+ * arise from hand-edited data; the counter suffix covers it rather than letting
+ * the index creation fail.
+ */
+async function backfillArtistSlugs(connection) {
+  const { buildArtistSlug } = require('../utils/slug')
+
+  const [rows] = await connection.query(
+    "SELECT id, first_name, last_name, username FROM users WHERE role = 'artist' AND (slug IS NULL OR slug = '')"
+  )
+  if (!rows.length) return
+
+  const [existing] = await connection.query(
+    'SELECT slug FROM users WHERE slug IS NOT NULL AND slug <> {}'.replace('{}', "''")
+  )
+  const taken = new Set(existing.map((row) => row.slug))
+
+  for (const row of rows) {
+    const base = buildArtistSlug({
+      firstName: row.first_name,
+      lastName: row.last_name,
+      username: row.username,
+    })
+    if (!base) continue
+
+    let slug = base
+    let counter = 2
+    while (taken.has(slug)) slug = `${base}-${counter++}`
+    taken.add(slug)
+
+    await connection.query('UPDATE users SET slug = ? WHERE id = ?', [slug, row.id])
+    console.log(`[migrate] slug for ${row.username}: ${slug}`)
+  }
+}
+
+async function addUniqueIndexes(connection, database) {
+  for (const [table, indexName, column] of ADDED_UNIQUE_INDEXES) {
+    const [rows] = await connection.query(
+      `SELECT 1 FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME = ? LIMIT 1`,
+      [database, table, indexName]
+    )
+    if (rows.length) continue
+
+    await connection.query(
+      `ALTER TABLE \`${table}\` ADD UNIQUE KEY \`${indexName}\` (\`${column}\`)`
+    )
+    console.log(`[migrate] added unique index ${table}.${indexName}`)
+  }
+}
+
 async function main() {
   const { host, port, user, password, database } = env.db
 
@@ -115,6 +176,8 @@ async function main() {
   console.log('[migrate] schema applied')
 
   await addMissingColumns(connection, database)
+  await backfillArtistSlugs(connection)
+  await addUniqueIndexes(connection, database)
 
   const [tables] = await connection.query('SHOW TABLES')
   console.log(`[migrate] ${tables.length} tables:`, tables.map((row) => Object.values(row)[0]).join(', '))

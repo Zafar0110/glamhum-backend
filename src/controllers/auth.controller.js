@@ -11,6 +11,42 @@ const { signToken } = require('../utils/jwt')
 const { serializeUser } = require('../utils/serializers')
 const otpService = require('../services/otp.service')
 const sms = require('../services/sms.service')
+const { buildArtistSlug } = require('../utils/slug')
+
+/**
+ * Give an artist the readable slug their public profile is served under, e.g.
+ * zafar-iqbal-hevanef820. Call it whenever the name or username changes.
+ *
+ * Two artists genuinely can share a name — the username keeps the slug unique —
+ * but a counter is appended anyway so a clash can never break a save.
+ */
+async function refreshArtistSlug(userId) {
+  const user = await queryOne(
+    'SELECT id, role, first_name, last_name, username FROM users WHERE id = ? LIMIT 1',
+    [userId]
+  )
+  if (!user || user.role !== 'artist') return null
+
+  const base = buildArtistSlug({
+    firstName: user.first_name,
+    lastName: user.last_name,
+    username: user.username,
+  })
+  if (!base) return null
+
+  let slug = base
+  for (let counter = 2; ; counter += 1) {
+    const clash = await queryOne('SELECT id FROM users WHERE slug = ? AND id <> ? LIMIT 1', [
+      slug,
+      userId,
+    ])
+    if (!clash) break
+    slug = `${base}-${counter}`
+  }
+
+  await query('UPDATE users SET slug = ? WHERE id = ?', [slug, userId])
+  return slug
+}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -117,10 +153,14 @@ async function register(req, res, role) {
     )
   }
 
+  // Artists are browsable at /explore/<slug>, so they need one from the start.
+  const slug = role === 'artist' ? await refreshArtistSlug(id) : null
+
   // SPEED: build the response from what we just wrote instead of re-selecting
   // the row — one less round trip on the sign-up path.
   const user = {
     id,
+    slug,
     first_name: firstName.trim(),
     last_name: lastName.trim(),
     username: cleanUsername,
@@ -309,6 +349,16 @@ exports.updateProfile = async (req, res) => {
 
   values.push(req.user.id)
   await query(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, values)
+
+  // The profile URL is built from the name and username, so it has to follow
+  // them. The old slug stops resolving, which is why /explore/<id> still works.
+  if (
+    req.body.firstName !== undefined ||
+    req.body.lastName !== undefined ||
+    req.body.username !== undefined
+  ) {
+    await refreshArtistSlug(req.user.id)
+  }
 
   const user = await queryOne('SELECT * FROM users WHERE id = ?', [req.user.id])
   return success(res, { user: serializeUser(user) }, 'Profile updated successfully')

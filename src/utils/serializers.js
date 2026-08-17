@@ -49,6 +49,7 @@ function serializeUser(row) {
     user.hasStudio = Boolean(row.has_studio)
     user.description = row.description || ''
     user.specialty = row.specialty || ''
+    user.slug = row.slug || null
     user.yearsOfExperience = Number(row.years_of_experience || 0)
     user.approvalStatus = row.approval_status || 'pending'
     user.rejectionReason = row.rejection_reason || undefined

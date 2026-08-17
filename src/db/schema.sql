@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS users (
   has_studio        TINYINT(1)    NULL,
   description       TEXT          NULL,
   specialty         VARCHAR(60)   NULL,
+  -- Readable profile URL, e.g. /explore/zafar-iqbal-hevanef820. Artists only.
+  slug              VARCHAR(160)  NULL,
   years_of_experience TINYINT UNSIGNED NOT NULL DEFAULT 0,
   min_price         DECIMAL(10,2) NULL,
   currency          CHAR(3)       NULL DEFAULT 'AED',
@@ -51,6 +53,7 @@ CREATE TABLE IF NOT EXISTS users (
 
   UNIQUE KEY uq_users_email (email),
   UNIQUE KEY uq_users_username (username),
+  UNIQUE KEY uq_users_slug (slug),
   KEY idx_users_role (role),
   KEY idx_users_approval (approval_status),
   KEY idx_users_city (city),

@@ -9,6 +9,7 @@ const { success, paginated } = require('../utils/response')
 const { absoluteUpload, serializeService } = require('../utils/serializers')
 const { checkSlot } = require('../services/availability.service')
 const { addMinutes } = require('../services/appointments.service')
+const { looksLikeUuid } = require('../utils/slug')
 
 const VISIBLE = "role = 'artist' AND approval_status = 'approved' AND is_active = 1"
 
@@ -17,6 +18,8 @@ function serializePublicArtist(row, portfolioImages = []) {
   return {
     id: row.id,
     _id: row.id,
+    // The public profile URL segment; links should use this, not the id.
+    slug: row.slug || null,
     firstName: row.first_name,
     lastName: row.last_name,
     fullName: [row.first_name, row.last_name].filter(Boolean).join(' '),
@@ -158,13 +161,28 @@ async function portfolioImagesFor(artistIds) {
 }
 
 /**
+ * Look an artist up by either form of the URL segment.
+ *
+ * Profiles are linked as /explore/zafar-iqbal-hevanef820, but the id still
+ * resolves so older links, bookmarks and anything that kept a raw id keep
+ * working — including a slug that has since changed because the artist renamed
+ * themselves.
+ */
+async function findVisibleArtist(param) {
+  const value = String(param || '').trim()
+  if (!value) return null
+
+  const column = looksLikeUuid(value) ? 'id' : 'slug'
+  return queryOne(`SELECT * FROM users WHERE ${column} = ? AND ${VISIBLE} LIMIT 1`, [value])
+}
+
+/**
  * GET /api/artists/:artistId
+ * Accepts an id or a slug.
  * -> { artist (with stats + portfolioImages), services, reviews }
  */
 exports.getArtistById = async (req, res) => {
-  const artist = await queryOne(`SELECT * FROM users WHERE id = ? AND ${VISIBLE} LIMIT 1`, [
-    req.params.artistId,
-  ])
+  const artist = await findVisibleArtist(req.params.artistId)
   if (!artist) throw ApiError.notFound('Artist not found or not accepting bookings yet')
 
   // Today, as a local calendar date — past blocks/vacations are not news to a
@@ -310,9 +328,9 @@ exports.serializePublicArtist = serializePublicArtist
 exports.portfolioImagesFor = portfolioImagesFor
 
 exports.checkAvailability = async (req, res) => {
-  const artist = await queryOne(`SELECT id FROM users WHERE id = ? AND ${VISIBLE} LIMIT 1`, [
-    req.params.artistId,
-  ])
+  // Same id-or-slug handling as the profile, so the availability check works
+  // straight from the URL the client is sitting on.
+  const artist = await findVisibleArtist(req.params.artistId)
   if (!artist) throw ApiError.notFound('Artist not found')
 
   const date = (req.query.date || '').trim()
