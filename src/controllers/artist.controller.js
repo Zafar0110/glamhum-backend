@@ -53,8 +53,16 @@ exports.getProfileStatus = async (req, res) => {
 
 /**
  * POST /api/artist/submit-profile
- * Ends onboarding step 3. Moves the artist into the admin queue and emails
- * them a confirmation.
+ * Body: { allowIncomplete?: boolean }
+ *
+ * Ends onboarding. Moves the artist into the admin queue and emails them a
+ * confirmation.
+ *
+ * "Continue" on step 3 sends nothing and is held to the full checklist, so the
+ * artist is told exactly what is missing. "Skip This Step" / "Set Up Later"
+ * send allowIncomplete, which still queues the account for review — an artist
+ * who wants to be reviewed without services or portfolio images can be. The
+ * admin sees what is missing in `missing` and decides.
  */
 exports.submitProfile = async (req, res) => {
   const user = req.user
@@ -68,10 +76,11 @@ exports.submitProfile = async (req, res) => {
   }
 
   const missing = await missingRequirements(user.id, user)
+  const allowIncomplete = Boolean(req.body && req.body.allowIncomplete)
 
   // Sent back so the UI can say exactly what is missing rather than
   // "something went wrong".
-  if (missing.length) {
+  if (missing.length && !allowIncomplete) {
     throw ApiError.validation(
       {
         city: missing.includes('city') ? 'Add the city you work in' : undefined,
@@ -97,7 +106,13 @@ exports.submitProfile = async (req, res) => {
   const updated = await queryOne('SELECT * FROM users WHERE id = ?', [user.id])
   return success(
     res,
-    { user: serializeUser(updated), approvalStatus: 'pending', submittedAt: now },
+    {
+      user: serializeUser(updated),
+      approvalStatus: 'pending',
+      submittedAt: now,
+      // Empty unless they skipped ahead; the status screen lists these.
+      missing,
+    },
     'Profile submitted for review'
   )
 }
