@@ -10,6 +10,7 @@ const { success } = require('../utils/response')
 const { signToken } = require('../utils/jwt')
 const { serializeUser } = require('../utils/serializers')
 const otpService = require('../services/otp.service')
+const sms = require('../services/sms.service')
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -43,12 +44,20 @@ async function register(req, res, role) {
   const cleanUsername = username.trim().toLowerCase()
 
   const existing = await queryOne(
-    'SELECT id, is_email_verified FROM users WHERE email = ? LIMIT 1',
+    'SELECT id, is_email_verified, is_phone_verified FROM users WHERE email = ? LIMIT 1',
     [cleanEmail]
   )
 
-  // A CONFIRMED account owns the address — nobody else can take it.
-  if (existing && existing.is_email_verified) {
+  /**
+   * A CONFIRMED account owns the address — nobody else can take it.
+   *
+   * "Confirmed" means EITHER channel. Sign-up verifies by SMS when
+   * OTP_CHANNEL=phone, which never sets is_email_verified, so checking only
+   * that flag left every phone-verified account re-registerable: the branch
+   * below reuses the same user row and overwrites its name, username, password
+   * and role, handing the account to whoever typed the address.
+   */
+  if (existing && (existing.is_email_verified || existing.is_phone_verified)) {
     throw ApiError.validation({ email: 'This email is already registered' })
   }
 
@@ -240,6 +249,31 @@ exports.updateProfile = async (req, res) => {
     if (field === 'email') value = String(value).trim().toLowerCase()
     if (field === 'username') value = String(value).trim().toLowerCase()
     if (field === 'hasStudio') value = value ? 1 : 0
+    if (field === 'phone' && String(value).trim()) {
+      /**
+       * Store E.164, the same form sendPhoneOTP writes.
+       *
+       * Saving the raw input here meant the same number could live as
+       * '971554082607' on one account and '+971554082607' on another. The
+       * "one phone per account" check compares strings, so the two never
+       * matched and a number could be reused — which is how two live accounts
+       * ended up sharing one mobile.
+       */
+      const e164 = sms.toE164(value, req.body.countryCode || req.user.country_code || '')
+      if (!sms.isValidPhone(e164)) {
+        throw ApiError.validation({ phone: 'Enter a valid phone number, including the country code' })
+      }
+
+      const taken = await queryOne(
+        'SELECT id FROM users WHERE phone = ? AND id <> ? LIMIT 1',
+        [e164, req.user.id]
+      )
+      if (taken) {
+        throw ApiError.validation({ phone: 'This phone number is already used by another account' })
+      }
+
+      value = e164
+    }
     if (field === 'avatar') {
       // `avatar` is a VARCHAR(255) path, not the picture itself. A base64 data
       // URL would be silently truncated to 255 characters of garbage and the
