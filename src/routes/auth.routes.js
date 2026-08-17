@@ -5,7 +5,7 @@ const { upload } = require('../middleware/upload')
 const controller = require('../controllers/auth.controller')
 
 const router = express.Router()
-
+ 
 // Public
 router.post('/register/client', asyncHandler(controller.registerClient))
 router.post('/register/artist', asyncHandler(controller.registerArtist))
