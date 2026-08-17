@@ -19,7 +19,7 @@ const stripe = require('../services/stripe.service')
 const { checkSlot } = require('../services/availability.service')
 const { parseAppointmentTime } = require('../services/appointments.service')
 
-const SERVICE_FEE = 150
+const { getServiceFee } = require('../services/settings.service')
 
 /** Platform commission on a booking, in major units. */
 function commissionFor(amount) {
@@ -62,7 +62,9 @@ exports.preparePayment = async (req, res) => {
   }
 
   const servicesTotal = services.reduce((sum, service) => sum + Number(service.price), 0)
-  const total = servicesTotal + SERVICE_FEE
+  // Read per booking: the admin can change the fee at any time.
+  const serviceFee = await getServiceFee()
+  const total = servicesTotal + serviceFee
   const currency = artist.currency || 'AED'
 
   // Check the slot BEFORE the card is charged. The booking is only created
@@ -554,7 +556,7 @@ exports.requestWithdrawal = async (req, res) => {
 
 exports.recordTransaction = recordTransaction
 exports.commissionFor = commissionFor
-exports.SERVICE_FEE = SERVICE_FEE
+exports.getServiceFee = getServiceFee
 
 // ---------------------------------------------------------------------------
 // Stripe Connect — so artists can be paid directly

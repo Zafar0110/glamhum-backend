@@ -8,6 +8,7 @@ const ApiError = require('../utils/ApiError')
 const { success, paginated } = require('../utils/response')
 const { serializeUser, serializeService } = require('../utils/serializers')
 const mail = require('../services/mail.service')
+const settingsService = require('../services/settings.service')
 
 const SORT_COLUMNS = {
   createdAt: 'created_at',
@@ -263,4 +264,33 @@ exports.getDashboardStats = async (req, res) => {
     services: { total: Number(stats.servicesTotal) },
     totalRevenue: Number(stats.totalRevenue),
   })
+}
+
+// ---------------------------------------------------------------------------
+// Platform settings
+// ---------------------------------------------------------------------------
+
+/** GET /api/admin/settings */
+exports.getSettings = async (req, res) => {
+  const [settings, meta] = await Promise.all([
+    settingsService.getSettings(),
+    settingsService.getMetadata(),
+  ])
+
+  return success(res, { settings, lastChange: meta })
+}
+
+/**
+ * PATCH /api/admin/settings
+ * Body: { serviceFee?, commissionPercent? }
+ *
+ * Takes effect on the next booking — the fee is read from here rather than
+ * baked into the code, so nothing needs redeploying.
+ */
+exports.updateSettings = async (req, res) => {
+  const { errors, settings } = await settingsService.updateSettings(req.body || {}, req.user.id)
+  if (errors) throw ApiError.validation(errors)
+
+  const meta = await settingsService.getMetadata()
+  return success(res, { settings, lastChange: meta }, 'Settings saved')
 }

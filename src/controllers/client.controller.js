@@ -13,7 +13,7 @@ const {
 } = require('../services/appointments.service')
 const { checkSlot } = require('../services/availability.service')
 
-const SERVICE_FEE = 150 // matches SERVICE_FEE on the booking screen
+const { getServiceFee } = require('../services/settings.service')
 
 /** Validate the payload and load the artist + services it refers to. */
 async function resolveBooking(body, clientId) {
@@ -71,6 +71,8 @@ async function resolveBooking(body, clientId) {
   if (!slot.available) throw ApiError.conflict(slot.reason)
 
   const servicesTotal = services.reduce((sum, s) => sum + Number(s.price), 0)
+  // The admin sets this; it is read per booking rather than baked in.
+  const serviceFee = await getServiceFee()
 
   return {
     artist,
@@ -82,7 +84,8 @@ async function resolveBooking(body, clientId) {
     endTime,
     totalMinutes,
     servicesTotal,
-    total: servicesTotal + SERVICE_FEE,
+    serviceFee,
+    total: servicesTotal + serviceFee,
     clientId,
   }
 }
@@ -119,7 +122,7 @@ async function createAppointment(resolved, { paymentMethod, paid, paymentIntentI
         'pending',
         resolved.artist.currency || 'AED',
         resolved.total,
-        SERVICE_FEE,
+        resolved.serviceFee,
         paymentMethod,
         paid ? 'paid' : 'unpaid',
         paymentIntentId,

@@ -18,4 +18,8 @@ router.patch('/artists/:artistId/reject', asyncHandler(controller.rejectArtist))
 router.patch('/artists/:artistId/status', asyncHandler(controller.setArtistStatus))
 router.delete('/artists/:artistId', asyncHandler(controller.deleteArtist))
 
+// --- platform settings ----------------------------------------------------
+router.get('/settings', asyncHandler(controller.getSettings))
+router.patch('/settings', asyncHandler(controller.updateSettings))
+
 module.exports = router

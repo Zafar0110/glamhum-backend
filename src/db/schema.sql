@@ -83,6 +83,17 @@ CREATE TABLE IF NOT EXISTS services (
   CONSTRAINT fk_services_artist FOREIGN KEY (artist_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Platform-wide settings the admin can change without a redeploy, e.g. the
+-- booking service fee. One row per key so new settings need no migration.
+CREATE TABLE IF NOT EXISTS settings (
+  setting_key   VARCHAR(60)  NOT NULL PRIMARY KEY,
+  setting_value VARCHAR(255) NOT NULL,
+  updated_by    CHAR(36)     NULL,
+  updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_settings_updated_by FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS service_addons (
   id         CHAR(36)      NOT NULL PRIMARY KEY,
   service_id CHAR(36)      NOT NULL,

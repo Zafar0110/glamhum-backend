@@ -27,6 +27,18 @@ router.get('/health', async (req, res) => {
     : res.status(503).json({ success: false, message: 'Database unreachable', data })
 })
 
+/**
+ * GET /api/settings — the handful of platform values a public page needs.
+ *
+ * The booking screen has to show the same service fee the server will charge;
+ * it used to hardcode 150 alongside two server-side copies.
+ */
+router.get('/settings', async (req, res) => {
+  const { getSettings } = require('../services/settings.service')
+  const { serviceFee } = await getSettings()
+  return success(res, { serviceFee, currency: 'AED' })
+})
+
 router.use('/auth', require('./auth.routes'))
 router.use('/otp', require('./otp.routes'))
 router.use('/artists', require('./artists.routes')) // public directory
