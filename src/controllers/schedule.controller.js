@@ -28,6 +28,39 @@ function serializeBlockedTime(row) {
   }
 }
 
+/**
+ * Bookings that are still live inside a date range.
+ *
+ * Only pending and confirmed count: completed and cancelled appointments need
+ * nothing from the artist. Used to warn about a vacation that lands on top of
+ * work already accepted.
+ */
+async function appointmentsInRange(artistId, startDate, endDate) {
+  const rows = await query(
+    `SELECT a.id, a.appointment_date, a.start_time, a.end_time, a.status,
+            u.first_name, u.last_name
+       FROM appointments a
+       LEFT JOIN users u ON u.id = a.client_id
+      WHERE a.artist_id = ?
+        AND a.status IN ('pending','confirmed')
+        AND a.appointment_date BETWEEN ? AND ?
+      ORDER BY a.appointment_date, a.start_time`,
+    [artistId, startDate, endDate]
+  )
+
+  return rows.map((row) => ({
+    id: row.id,
+    date:
+      row.appointment_date instanceof Date
+        ? `${row.appointment_date.getFullYear()}-${String(row.appointment_date.getMonth() + 1).padStart(2, '0')}-${String(row.appointment_date.getDate()).padStart(2, '0')}`
+        : String(row.appointment_date || '').slice(0, 10),
+    startTime: String(row.start_time || '').slice(0, 5),
+    endTime: String(row.end_time || '').slice(0, 5),
+    status: row.status,
+    clientName: [row.first_name, row.last_name].filter(Boolean).join(' ') || 'Client',
+  }))
+}
+
 function serializeVacation(row) {
   if (!row) return null
   return {
@@ -362,7 +395,21 @@ exports.getVacations = async (req, res) => {
     params
   )
 
-  const vacations = rows.map(serializeVacation)
+  // A vacation does not cancel anything on its own — an artist can take time
+  // off over dates they have already accepted work on. Each one carries the
+  // bookings still standing inside it so the schedule can keep asking the
+  // artist to reschedule or cancel them.
+  const vacations = []
+  for (const row of rows) {
+    const vacation = serializeVacation(row)
+    vacation.conflictingAppointments = await appointmentsInRange(
+      req.user.id,
+      vacation.startDate,
+      vacation.endDate
+    )
+    vacations.push(vacation)
+  }
+
   return success(res, { vacations }, 'OK', 200, { total: vacations.length })
 }
 
@@ -378,13 +425,11 @@ exports.createVacation = async (req, res) => {
   }
   if (Object.keys(errors).length) throw ApiError.validation(errors)
 
-  // Warn rather than block: the artist may well intend to cancel these.
-  const [{ clashes }] = await query(
-    `SELECT COUNT(*) AS clashes FROM appointments
-      WHERE artist_id = ? AND status IN ('pending','confirmed')
-        AND appointment_date BETWEEN ? AND ?`,
-    [req.user.id, startDate, endDate]
-  )
+  // Warn rather than block. An artist who needs the day off should get it even
+  // when work is already booked — what they must not do is have it happen
+  // silently, so the bookings come back with the vacation and stay flagged on
+  // the schedule until they are rescheduled or cancelled.
+  const conflicts = await appointmentsInRange(req.user.id, startDate, endDate)
 
   const id = uuid()
   await query(
@@ -393,11 +438,14 @@ exports.createVacation = async (req, res) => {
   )
 
   const row = await queryOne('SELECT * FROM vacations WHERE id = ?', [id])
+  const vacation = serializeVacation(row)
+  vacation.conflictingAppointments = conflicts
+
   return success(
     res,
-    { vacation: serializeVacation(row), existingAppointments: Number(clashes) },
-    Number(clashes)
-      ? `Vacation saved. You still have ${clashes} appointment(s) booked in that period.`
+    { vacation, existingAppointments: conflicts.length, conflictingAppointments: conflicts },
+    conflicts.length
+      ? `Vacation saved, but you have ${conflicts.length} appointment(s) booked in that period. Reschedule or cancel them so clients are not left waiting.`
       : 'Vacation saved',
     201
   )
@@ -425,19 +473,17 @@ exports.updateVacation = async (req, res) => {
   ])
 
   // Same warning as on create: the artist may still have bookings in the period.
-  const [{ clashes }] = await query(
-    `SELECT COUNT(*) AS clashes FROM appointments
-      WHERE artist_id = ? AND status IN ('pending','confirmed')
-        AND appointment_date BETWEEN ? AND ?`,
-    [req.user.id, nextStartDate, nextEndDate]
-  )
+  const conflicts = await appointmentsInRange(req.user.id, nextStartDate, nextEndDate)
 
   const updated = await queryOne('SELECT * FROM vacations WHERE id = ?', [row.id])
+  const vacation = serializeVacation(updated)
+  vacation.conflictingAppointments = conflicts
+
   return success(
     res,
-    { vacation: serializeVacation(updated), existingAppointments: Number(clashes) },
-    Number(clashes)
-      ? `Vacation updated. You still have ${clashes} appointment(s) booked in that period.`
+    { vacation, existingAppointments: conflicts.length, conflictingAppointments: conflicts },
+    conflicts.length
+      ? `Vacation updated, but you have ${conflicts.length} appointment(s) booked in that period. Reschedule or cancel them so clients are not left waiting.`
       : 'Vacation updated'
   )
 }
