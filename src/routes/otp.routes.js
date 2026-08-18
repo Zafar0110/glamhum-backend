@@ -15,20 +15,18 @@ const sendLimiter = rateLimit({
   message: { success: false, message: 'Too many code requests. Please wait a few minutes.' },
 })
 
-// Phone OTP — what sign-up verification uses.
-// optionalAuth: the user may or may not already hold a token at this point.
+ 
 router.post('/send-phone', sendLimiter, optionalAuth, asyncHandler(controller.sendPhoneOTP))
 router.post('/verify-phone', optionalAuth, asyncHandler(controller.verifyPhoneOTP))
 
-// Email OTP — still used by forgot-password, and available if you switch
-// OTP_CHANNEL back to email.
+// Email OTP  
+ 
 router.post('/send-email', sendLimiter, asyncHandler(controller.sendEmailOTP))
 router.post('/verify-email', asyncHandler(controller.verifyEmailOTP))
 
 router.post('/resend', sendLimiter, optionalAuth, asyncHandler(controller.resendOTP))
 
-// Polled by the verify screen: Twilio may only report a failure after the send
-// response has gone out, and the user still needs to be told.
+ 
 router.get('/delivery-status', asyncHandler(controller.getDeliveryStatus))
 
 module.exports = router

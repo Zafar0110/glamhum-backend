@@ -1,15 +1,14 @@
 const env = require('../config/env')
 const { failure } = require('../utils/response')
 
-/** 404 for unmatched routes. */
+//404 for unmatched routes
 function notFound(req, res) {
   return failure(res, `Route not found: ${req.method} ${req.originalUrl}`, 404)
 }
 
-/** Final error middleware — every thrown error lands here. */
-// eslint-disable-next-line no-unused-vars
+ 
 function errorHandler(err, req, res, next) {
-  // Known, deliberate errors
+   
   if (err.isApiError) {
     return failure(res, err.message, err.status, err.errors)
   }
@@ -25,9 +24,7 @@ function errorHandler(err, req, res, next) {
     return failure(res, 'Database connection failed', 503)
   }
 
-  // Stripe rejections are the caller's problem to act on, not a server fault.
-  // Surfacing them as 500s hides the real reason behind "Request failed with
-  // status code 500".
+  
   if (err.stripeType || err.stripeCode) {
     const status = err.stripeType === 'card_error' ? 402 : 400
     console.error(`[stripe] ${err.stripeType || 'error'} ${err.stripeCode || ''}: ${err.message}`)

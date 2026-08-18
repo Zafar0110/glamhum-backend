@@ -1,8 +1,4 @@
-// Throw this from any controller/service; errorHandler turns it into the
-// standard failure envelope.
-//
-//   throw new ApiError(404, 'Artist not found')
-//   throw ApiError.validation({ email: 'Email already registered' })
+ 
 
 class ApiError extends Error {
   constructor(status, message, errors = undefined) {

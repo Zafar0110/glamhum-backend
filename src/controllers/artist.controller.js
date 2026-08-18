@@ -1,6 +1,4 @@
-// Artist-side onboarding: submitting the finished profile for admin review.
-// (The dashboard endpoints — appointments, schedule, payments, messages —
-// still live as stubs in routes/artist.routes.js.)
+ 
 
 const { query, queryOne } = require('../config/db')
 const env = require('../config/env')
@@ -10,7 +8,7 @@ const { serializeUser, serializeReview } = require('../utils/serializers')
 const { hydrateAppointments } = require('../services/appointments.service')
 const mail = require('../services/mail.service')
 
-/** What still has to be filled in before a profile can be reviewed. */
+// What still has to be filled in before a profile can be reviewed.  
 async function missingRequirements(artistId, user) {
   const missing = []
 
@@ -33,10 +31,7 @@ async function missingRequirements(artistId, user) {
   return missing
 }
 
-/**
- * GET /api/artist/profile-status
- * Drives the onboarding success screen and the dashboard banner.
- */
+//GET /api/artist/profile-status
 exports.getProfileStatus = async (req, res) => {
   const user = req.user
   const missing = await missingRequirements(user.id, user)
@@ -51,19 +46,7 @@ exports.getProfileStatus = async (req, res) => {
   })
 }
 
-/**
- * POST /api/artist/submit-profile
- * Body: { allowIncomplete?: boolean }
- *
- * Ends onboarding. Moves the artist into the admin queue and emails them a
- * confirmation.
- *
- * "Continue" on step 3 sends nothing and is held to the full checklist, so the
- * artist is told exactly what is missing. "Skip This Step" / "Set Up Later"
- * send allowIncomplete, which still queues the account for review — an artist
- * who wants to be reviewed without services or portfolio images can be. The
- * admin sees what is missing in `missing` and decides.
- */
+//POST /api/artist/submit-profile
 exports.submitProfile = async (req, res) => {
   const user = req.user
 
@@ -78,7 +61,7 @@ exports.submitProfile = async (req, res) => {
   const missing = await missingRequirements(user.id, user)
   const allowIncomplete = Boolean(req.body && req.body.allowIncomplete)
 
-  // Sent back so the UI can say exactly what is missing rather than
+   
   // "something went wrong".
   if (missing.length && !allowIncomplete) {
     throw ApiError.validation(
@@ -110,21 +93,14 @@ exports.submitProfile = async (req, res) => {
       user: serializeUser(updated),
       approvalStatus: 'pending',
       submittedAt: now,
-      // Empty unless they skipped ahead; the status screen lists these.
       missing,
     },
     'Profile submitted for review'
   )
 }
 
-// ---------------------------------------------------------------------------
-// Appointments (artist dashboard: "Upcoming Appointments" + Schedule)
-// ---------------------------------------------------------------------------
-
-/**
- * GET /api/artist/appointments
- * ?status &serviceType &startDate &endDate &page &limit
- */
+ 
+ //GET /api/artist/appointments
 exports.getAllAppointments = async (req, res) => {
   const { status, serviceType, startDate, endDate } = req.query
   const page = Math.max(1, parseInt(req.query.page, 10) || 1)
@@ -170,11 +146,8 @@ exports.getAllAppointments = async (req, res) => {
   return paginated(res, { appointments }, { total, page, limit })
 }
 
-/**
- * GET /api/artist/appointments/:appointmentId
- * Everything the booking detail page shows: the appointment itself, the
- * payout breakdown, and the client's review once they have left one.
- */
+//GET /api/artist/appointments/:appointmentId
+
 exports.getAppointmentById = async (req, res) => {
   const row = await queryOne('SELECT * FROM appointments WHERE id = ? LIMIT 1', [
     req.params.appointmentId,
@@ -207,7 +180,7 @@ exports.getAppointmentById = async (req, res) => {
   return success(res, {
     appointment,
     review: reviewRow ? serializeReview(reviewRow) : null,
-    // Where the client's money went — the same figures the payout uses.
+     
     payout: {
       currency: row.currency,
       servicesTotal,
@@ -230,15 +203,9 @@ exports.getAppointmentById = async (req, res) => {
   })
 }
 
-/**
- * GET /api/artist/reviews?rating=&sort=&startDate=&endDate=&page=&limit=
- *
- * Feedback clients left after their appointments completed.
- *
- * Sorting and date filtering happen here, over every review, rather than in the
- * browser over the page already fetched — sorting one page of six by "highest
- * rating" only reorders those six and hides the actual best reviews on page 2.
- */
+//GET /api/artist/reviews
+
+
 const REVIEW_SORTS = {
   highest: 'r.rating DESC, r.created_at DESC',
   lowest: 'r.rating ASC, r.created_at DESC',
@@ -269,13 +236,12 @@ exports.getArtistReviews = async (req, res) => {
     params.push(`${req.query.endDate} 23:59:59`)
   }
 
-  // Whitelisted: the value is interpolated into the query.
+   
   const orderBy = REVIEW_SORTS[req.query.sort] || REVIEW_SORTS.newest
 
   const whereSql = `WHERE ${where.join(' AND ')}`
 
-  // Count, page of rows and the rating breakdown together — the summary always
-  // covers every review, not just the page being shown.
+   
   const [[{ total }], rows, summary] = await Promise.all([
     query(`SELECT COUNT(*) AS total FROM reviews r ${whereSql}`, params),
     query(
@@ -331,13 +297,8 @@ const ALLOWED_TRANSITIONS = {
   cancelled: [],
 }
 
-/**
- * PATCH /api/artist/appointments/:appointmentId/status
- * Body: { status: 'confirmed' | 'completed' | 'cancelled' }
- *
- * Completing a paid appointment releases the artist's payout and writes the
- * matching transaction rows, so the Payments tab reflects reality.
- */
+//PATCH /api/artist/appointments/:appointmentId/status
+
 exports.updateAppointmentStatus = async (req, res) => {
   const { status } = req.body || {}
   const appointment = await queryOne('SELECT * FROM appointments WHERE id = ? LIMIT 1', [
@@ -359,10 +320,7 @@ exports.updateAppointmentStatus = async (req, res) => {
   let payoutNote = ''
 
   if (status === 'completed') {
-    // Completing the job is what releases the escrow: the artist's share is
-    // transferred to their connected Stripe account and the platform keeps the
-    // service fee plus its commission. Done BEFORE the status flips so a Stripe
-    // failure cannot leave a completed booking silently unpaid.
+   
     const { releaseEscrow } = require('./payments.controller')
     const result = await releaseEscrow(appointment).catch((error) => {
       console.error('[escrow] release failed for', appointment.id, '-', error.message)
@@ -379,10 +337,7 @@ exports.updateAppointmentStatus = async (req, res) => {
       payoutNote = ' The payout could not be sent yet and will be retried.'
     }
   } else if (status === 'cancelled') {
-    // The artist is declining, so the client keeps the whole amount — the
-    // late-cancellation penalty only applies when the CLIENT pulls out. Refund
-    // first: cancelling a paid booking without returning the money would leave
-    // the client charged for a service nobody is going to perform.
+     
     const { issueRefund } = require('./payments.controller')
     const refund = await issueRefund(appointment, {
       reason: String(req.body?.cancellationReason || 'Declined by artist').trim(),
@@ -400,7 +355,7 @@ exports.updateAppointmentStatus = async (req, res) => {
       [String(req.body?.cancellationReason || 'Cancelled by artist').trim(), appointment.id]
     )
 
-    // A cancelled booking earns nothing, so the held deposit never settles.
+    // A cancelled booking earns nothing, 
     await query(
       "UPDATE transactions SET status = 'failed' WHERE appointment_id = ? AND type = 'deposit' AND status = 'pending'",
       [appointment.id]

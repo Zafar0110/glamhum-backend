@@ -1,5 +1,4 @@
-// Multer storage for avatars and portfolio images.
-// Files land in <UPLOAD_DIR>/ and are served from /uploads/<filename>.
+ 
 
 const fs = require('fs')
 const path = require('path')
@@ -36,7 +35,7 @@ const upload = multer({
   },
 })
 
-/** Public URL for a stored file. */
+//Public URL for a stored file
 const publicUrl = (filename) => `/uploads/${filename}`
 
 module.exports = { upload, uploadRoot, publicUrl }

@@ -1,17 +1,4 @@
--- ---------------------------------------------------------------------------
--- GlamHub schema (MySQL 8+)
---
--- Modelled from the shapes the Next.js frontend already consumes
--- (frontend/lib/dummyData.ts + frontend/lib/api.ts).
---
--- IDs are CHAR(36) UUIDs so they stay strings, matching the id/_id pairs the
--- UI expects. Money is DECIMAL(10,2). Run with: npm run db:migrate
--- ---------------------------------------------------------------------------
-
--- ---------------------------------------------------------------------------
--- users: clients, artists and admins live in one table. Artist-only columns
--- are nullable and only populated for role = 'artist'.
--- ---------------------------------------------------------------------------
+ 
 CREATE TABLE IF NOT EXISTS users (
   id                CHAR(36)      NOT NULL PRIMARY KEY,
   first_name        VARCHAR(80)   NOT NULL,
@@ -36,7 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
   has_studio        TINYINT(1)    NULL,
   description       TEXT          NULL,
   specialty         VARCHAR(60)   NULL,
-  -- Readable profile URL, e.g. /explore/zafar-iqbal-hevanef820. Artists only.
+   
   slug              VARCHAR(160)  NULL,
   years_of_experience TINYINT UNSIGNED NOT NULL DEFAULT 0,
   min_price         DECIMAL(10,2) NULL,
@@ -60,20 +47,18 @@ CREATE TABLE IF NOT EXISTS users (
   CONSTRAINT fk_users_approved_by FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ---------------------------------------------------------------------------
--- services offered by an artist
--- ---------------------------------------------------------------------------
+ 
 CREATE TABLE IF NOT EXISTS services (
   id                  CHAR(36)     NOT NULL PRIMARY KEY,
   artist_id           CHAR(36)     NOT NULL,
   service_name        VARCHAR(160) NOT NULL,
   service_description TEXT         NULL,
-  service_type        VARCHAR(60)  NOT NULL,  -- makeup | hair | nails | skincare | spa | lashes
+  service_type        VARCHAR(60)  NOT NULL,   
   price_type          VARCHAR(40)  NOT NULL DEFAULT 'fixed',
   price               DECIMAL(10,2) NOT NULL,
   currency            CHAR(3)      NOT NULL DEFAULT 'AED',
-  duration            VARCHAR(20)  NOT NULL,  -- display form, e.g. '2h 30m'
-  duration_minutes    INT          NULL,      -- numeric form for scheduling maths
+  duration            VARCHAR(20)  NOT NULL,  
+  duration_minutes    INT          NULL,       
   is_active           TINYINT(1)   NOT NULL DEFAULT 1,
   created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -83,8 +68,7 @@ CREATE TABLE IF NOT EXISTS services (
   CONSTRAINT fk_services_artist FOREIGN KEY (artist_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Platform-wide settings the admin can change without a redeploy, e.g. the
--- booking service fee. One row per key so new settings need no migration.
+ 
 CREATE TABLE IF NOT EXISTS settings (
   setting_key   VARCHAR(60)  NOT NULL PRIMARY KEY,
   setting_value VARCHAR(255) NOT NULL,
@@ -106,10 +90,7 @@ CREATE TABLE IF NOT EXISTS service_addons (
   KEY idx_addons_service (service_id),
   CONSTRAINT fk_addons_service FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ---------------------------------------------------------------------------
--- portfolio gallery
--- ---------------------------------------------------------------------------
+ 
 CREATE TABLE IF NOT EXISTS portfolio_images (
   id         CHAR(36)     NOT NULL PRIMARY KEY,
   artist_id  CHAR(36)     NOT NULL,
@@ -121,9 +102,7 @@ CREATE TABLE IF NOT EXISTS portfolio_images (
   CONSTRAINT fk_portfolio_artist FOREIGN KEY (artist_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ---------------------------------------------------------------------------
--- appointments (bookings)
--- ---------------------------------------------------------------------------
+
 CREATE TABLE IF NOT EXISTS appointments (
   id                   CHAR(36)      NOT NULL PRIMARY KEY,
   client_id            CHAR(36)      NOT NULL,
@@ -143,9 +122,7 @@ CREATE TABLE IF NOT EXISTS appointments (
   service_fee          DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   payment_method       ENUM('pay_now','pay_at_venue') NOT NULL DEFAULT 'pay_at_venue',
   payment_status       ENUM('unpaid','pending','paid','refunded') NOT NULL DEFAULT 'unpaid',
-  payment_intent_id    VARCHAR(120)  NULL,
-  -- Escrow: the charge the client's money sits in, and the transfer that
-  -- releases the artist's share when the appointment is completed.
+  payment_intent_id    VARCHAR(120)  NULL, 
   stripe_charge_id     VARCHAR(120)  NULL,
   stripe_transfer_id   VARCHAR(120)  NULL,
   artist_payout_status ENUM('not_applicable','pending','released','refunded') NOT NULL DEFAULT 'not_applicable',
@@ -164,8 +141,7 @@ CREATE TABLE IF NOT EXISTS appointments (
   CONSTRAINT fk_appt_artist FOREIGN KEY (artist_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Line items. Name/price/type are snapshotted so past bookings do not change
--- when the artist later edits or deletes the service.
+ 
 CREATE TABLE IF NOT EXISTS appointment_services (
   id             CHAR(36)      NOT NULL PRIMARY KEY,
   appointment_id CHAR(36)      NOT NULL,
@@ -179,9 +155,7 @@ CREATE TABLE IF NOT EXISTS appointment_services (
   CONSTRAINT fk_appt_services_service FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ---------------------------------------------------------------------------
--- reviews: one per appointment, overall rating + 4 category scores
--- ---------------------------------------------------------------------------
+ 
 CREATE TABLE IF NOT EXISTS reviews (
   id              CHAR(36)     NOT NULL PRIMARY KEY,
   appointment_id  CHAR(36)     NOT NULL,
@@ -203,10 +177,7 @@ CREATE TABLE IF NOT EXISTS reviews (
   CONSTRAINT fk_reviews_client FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_reviews_artist FOREIGN KEY (artist_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ---------------------------------------------------------------------------
--- messages: chat threads are keyed by appointment_id
--- ---------------------------------------------------------------------------
+ 
 CREATE TABLE IF NOT EXISTS messages (
   id             CHAR(36)  NOT NULL PRIMARY KEY,
   appointment_id CHAR(36)  NOT NULL,
@@ -215,8 +186,7 @@ CREATE TABLE IF NOT EXISTS messages (
   message        TEXT      NOT NULL,
   is_read        TINYINT(1) NOT NULL DEFAULT 0,
   read_at        DATETIME  NULL,
-  -- Millisecond precision: chat messages sent in the same second must still
-  -- sort deterministically.
+   
   created_at     DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   updated_at     DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
 
@@ -227,9 +197,7 @@ CREATE TABLE IF NOT EXISTS messages (
   CONSTRAINT fk_messages_receiver FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ---------------------------------------------------------------------------
--- artist availability: blocked slots and vacations
--- ---------------------------------------------------------------------------
+ 
 CREATE TABLE IF NOT EXISTS blocked_times (
   id         CHAR(36)    NOT NULL PRIMARY KEY,
   artist_id  CHAR(36)    NOT NULL,
@@ -256,25 +224,18 @@ CREATE TABLE IF NOT EXISTS vacations (
   KEY idx_vacations_artist (artist_id, start_date),
   CONSTRAINT fk_vacations_artist FOREIGN KEY (artist_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ---------------------------------------------------------------------------
--- money: ledger + withdrawal requests + Stripe Connect accounts
--- ---------------------------------------------------------------------------
+ 
 CREATE TABLE IF NOT EXISTS transactions (
   id             CHAR(36)      NOT NULL PRIMARY KEY,
-  artist_id      CHAR(36)      NOT NULL,
-  -- Who paid. Null for withdrawals, which have no client side.
+  artist_id      CHAR(36)      NOT NULL, 
   client_id      CHAR(36)      NULL,
-  appointment_id CHAR(36)      NULL,
-  -- 'deposit' is money in from a client; it sits 'pending' while held in
-  -- escrow and becomes 'succeeded' when the appointment completes.
+  appointment_id CHAR(36)      NULL, 
   type           ENUM('deposit','booking_payment','payout','withdrawal','refund') NOT NULL,
   status         ENUM('pending','in_transit','succeeded','completed','failed') NOT NULL DEFAULT 'pending',
   amount         DECIMAL(10,2) NOT NULL,
   currency       CHAR(3)       NOT NULL DEFAULT 'AED',
   description    VARCHAR(255)  NULL,
-  reference      VARCHAR(120)  NULL,
-  -- Bank details supplied with a manual withdrawal request.
+  reference      VARCHAR(120)  NULL, 
   bank_details   JSON          NULL,
   created_at     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -306,9 +267,7 @@ CREATE TABLE IF NOT EXISTS stripe_accounts (
   artist_id           CHAR(36)     NOT NULL,
   stripe_account_id   VARCHAR(120) NOT NULL,
   charges_enabled     TINYINT(1)   NOT NULL DEFAULT 0,
-  payouts_enabled     TINYINT(1)   NOT NULL DEFAULT 0,
-  -- Outside card_payments countries (the UAE included) an Express account only
-  -- gets `transfers`, and that is what escrow release depends on.
+  payouts_enabled     TINYINT(1)   NOT NULL DEFAULT 0, 
   transfers_enabled   TINYINT(1)   NOT NULL DEFAULT 0,
   onboarding_complete TINYINT(1)   NOT NULL DEFAULT 0,
   requirements_due    JSON         NULL,
@@ -318,10 +277,7 @@ CREATE TABLE IF NOT EXISTS stripe_accounts (
   UNIQUE KEY uq_stripe_artist (artist_id),
   CONSTRAINT fk_stripe_artist FOREIGN KEY (artist_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ---------------------------------------------------------------------------
--- clients' saved artists
--- ---------------------------------------------------------------------------
+ 
 CREATE TABLE IF NOT EXISTS favorites (
   id         CHAR(36) NOT NULL PRIMARY KEY,
   client_id  CHAR(36) NOT NULL,
@@ -332,18 +288,13 @@ CREATE TABLE IF NOT EXISTS favorites (
   CONSTRAINT fk_fav_client FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_fav_artist FOREIGN KEY (artist_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ---------------------------------------------------------------------------
--- one-time codes for phone/email verification and password reset
--- ---------------------------------------------------------------------------
+ 
 CREATE TABLE IF NOT EXISTS otps (
   id          CHAR(36)     NOT NULL PRIMARY KEY,
   user_id     CHAR(36)     NULL,
-  identifier  VARCHAR(190) NOT NULL,  -- phone number or email the code was sent to
+  identifier  VARCHAR(190) NOT NULL,  
   code        VARCHAR(10)  NOT NULL,
-  type        ENUM('phone','email') NOT NULL DEFAULT 'phone',
-  -- Which channel actually carried the code. An SMS that cannot be delivered
-  -- falls back to email, and the verify screen needs to say so.
+  type        ENUM('phone','email') NOT NULL DEFAULT 'phone', 
   delivered_via VARCHAR(10) NOT NULL DEFAULT 'phone',
   purpose     ENUM('signup','forgot_password','update_contact') NOT NULL DEFAULT 'signup',
   expires_at  DATETIME     NOT NULL,
@@ -355,8 +306,5 @@ CREATE TABLE IF NOT EXISTS otps (
   CONSTRAINT fk_otps_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ---------------------------------------------------------------------------
--- Added after the initial schema: tracks when an artist submitted their
--- profile for review (onboarding step 3 -> admin approval queue).
--- ---------------------------------------------------------------------------
+ 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS submitted_at DATETIME NULL AFTER approval_status;

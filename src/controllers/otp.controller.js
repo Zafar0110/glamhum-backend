@@ -1,5 +1,4 @@
-// Email OTP: what sign-up uses today.
-// Phone/SMS is intentionally parked (see sendPhoneOTP at the bottom).
+ 
 
 const env = require('../config/env')
 const { query, queryOne } = require('../config/db')
@@ -12,11 +11,7 @@ const sms = require('../services/sms.service')
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-/**
- * POST /api/otp/send-email
- * Body: { email }
- * Sends (or re-sends) the sign-up confirmation code.
- */
+//POST /api/otp/send-email
 exports.sendEmailOTP = async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase()
   if (!email || !EMAIL_RE.test(email)) {
@@ -48,12 +43,7 @@ exports.sendEmailOTP = async (req, res) => {
   )
 }
 
-/**
- * POST /api/otp/verify-email
- * Body: { email, otp }
- * Marks the email verified and returns a fresh token + user so the frontend
- * can log the person straight in.
- */
+//POST /api/otp/verify-email
 exports.verifyEmailOTP = async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase()
   const otp = String(req.body.otp || '').trim()
@@ -85,27 +75,21 @@ exports.verifyEmailOTP = async (req, res) => {
   )
 }
 
-/**
- * POST /api/otp/resend
- * Body: { email, purpose? }  purpose: 'signup' (default) | 'forgot_password'
- */
+//POST /api/otp/resend
 exports.resendOTP = async (req, res) => {
   const purpose = req.body?.purpose === 'forgot_password' ? 'forgot_password' : 'signup'
-
-  // Resend by phone when a number is supplied (the sign-up flow), otherwise
-  // by email (forgot-password always uses email).
+ 
   const wantsSms = Boolean(req.body?.phone) && purpose === 'signup'
 
   if (wantsSms) {
     const e164 = sms.toE164(req.body.phone, req.body.countryCode)
     if (!sms.isValidPhone(e164)) throw ApiError.validation({ phone: 'Enter a valid phone number' })
 
-    // `email` is needed for the SMS-unreachable fallback.
+    
     const user = await queryOne('SELECT id, first_name, email FROM users WHERE phone = ? LIMIT 1', [e164])
     if (!user) throw ApiError.validation({ phone: 'No account found for this phone number' })
 
-    // Resend must take the SAME route as the original send, or a UAE number
-    // gets its first code via Verify and then a resend that cannot arrive.
+     
     const sent = await sendPhoneCode({ e164, user })
 
     return success(
@@ -146,19 +130,7 @@ exports.resendOTP = async (req, res) => {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Phone (SMS) — what sign-up uses.
-// ---------------------------------------------------------------------------
-
-/**
- * Send a phone code by the best available route. Used by BOTH send-phone and
- * resend, so a resend can never take a different (failing) route than the
- * original — which is exactly what stranded UAE numbers.
- *
- * 1. Twilio Verify when configured. It uses Twilio's own global routes and
- *    sender IDs, so it reaches countries our long code cannot (UAE -> 21612).
- * 2. Otherwise our own SMS, with an email fallback if the number is unreachable.
- */
+//Twilio Verify when configured
 async function sendPhoneCode({ e164, user, purpose = 'signup' }) {
   if (env.sms.useVerify) {
     try {
@@ -176,23 +148,20 @@ async function sendPhoneCode({ e164, user, purpose = 'signup' }) {
     type: 'phone',
     purpose,
     userId: user.id,
-    firstName: user.first_name,
-    // If the SMS cannot be routed, the same code is emailed here instead.
+    firstName: user.first_name, 
     fallbackEmail: user.email,
   })
 
   return {
     provider: 'direct_sms',
     otpLength: result.length,
-    expiresAt: result.expiresAt,
-    // 'phone' | 'email' | 'console' — where the code actually went, so the
-    // verify screen can tell the truth rather than always promising a text.
+    expiresAt: result.expiresAt, 
     deliveredVia: result.deliveredVia,
     debugCode: result.debugCode,
   }
 }
 
-/** The message the verify screen shows, matched to the channel actually used. */
+//The message the verify screen shows, matched to the channel actually used
 function deliveryMessage(sent, { phone, email }) {
   if (sent.deliveredVia === 'email') {
     return `We couldn't deliver a text to ${phone}, so your code was emailed to ${email} instead.`
@@ -203,13 +172,7 @@ function deliveryMessage(sent, { phone, email }) {
   return `Verification code sent to ${phone}`
 }
 
-/**
- * POST /api/otp/send-phone
- * Body: { phone, countryCode, email? }
- *
- * Saves the number against the account and texts a code to it. `email` lets
- * the caller identify the account when the sign-up token isn't attached yet.
- */
+//POST /api/otp/send-phone
 exports.sendPhoneOTP = async (req, res) => {
   const { phone, countryCode } = req.body || {}
   if (!phone || !String(phone).trim()) {
@@ -246,15 +209,12 @@ exports.sendPhoneOTP = async (req, res) => {
   return success(
     res,
     {
-      phone: e164,
-      // The verify screen renders this many boxes.
+      phone: e164, 
       otpLength: sent.otpLength,
       provider: sent.provider,
       expiresAt: sent.expiresAt,
-      smsConfigured: env.sms.configured,
-      // Where the code actually went, so the screen can explain a fallback.
-      deliveredVia: sent.deliveredVia || 'phone',
-      // The screen tells the user to check this inbox if no text arrives.
+      smsConfigured: env.sms.configured, 
+      deliveredVia: sent.deliveredVia || 'phone', 
       fallbackEmail: user.email,
       debugCode: sent.debugCode,
     },
@@ -262,13 +222,7 @@ exports.sendPhoneOTP = async (req, res) => {
   )
 }
 
-/**
- * GET /api/otp/delivery-status?phone=+9715...
- *
- * Twilio often accepts a message and only reports the failure seconds later,
- * after the send response has already gone out. The verify screen polls this
- * so it can still tell the user their code was emailed instead.
- */
+//GET /api/otp/delivery-status?phone=+9715
 exports.getDeliveryStatus = async (req, res) => {
   const e164 = sms.toE164(req.query.phone, req.query.countryCode)
   if (!sms.isValidPhone(e164)) throw ApiError.validation({ phone: 'Enter a valid phone number' })
@@ -294,11 +248,7 @@ exports.getDeliveryStatus = async (req, res) => {
   })
 }
 
-/**
- * POST /api/otp/verify-phone
- * Body: { phone, otp }
- * Marks the phone verified and returns a fresh token + user.
- */
+//POST /api/otp/verify-phone
 exports.verifyPhoneOTP = async (req, res) => {
   const { phone, countryCode } = req.body || {}
   const otp = String(req.body?.otp || '').trim()
@@ -311,9 +261,7 @@ exports.verifyPhoneOTP = async (req, res) => {
     throw ApiError.validation({ otp: `The code must be ${length} digits` })
   }
 
-  // When Verify is on, Twilio holds the code — check it there. If no
-  // verification is pending (we fell back to our own SMS/email), fall through
-  // to the local check rather than rejecting a code the user really was sent.
+ 
   let checkedByVerify = false
   if (env.sms.useVerify) {
     try {
@@ -351,10 +299,7 @@ exports.verifyPhoneOTP = async (req, res) => {
   )
 }
 
-/**
- * Work out which account a request belongs to: the bearer token when present,
- * otherwise the email carried over from the sign-up step.
- */
+ 
 async function resolveUser(req) {
   if (req.user) return req.user
 

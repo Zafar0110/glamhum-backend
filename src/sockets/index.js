@@ -1,9 +1,4 @@
-// Socket.IO layer for chat.
-//
-// The frontend (frontend/docs/BACKEND_CHAT_REQUIREMENTS.md) expects the server
-// to emit `new_message` to the RECEIVER right after a message is saved, with a
-// payload matching serializeMessage(). Each user joins a room named after their
-// own id, so emitting is just: emitNewMessage(payload).
+ 
 
 const { Server } = require('socket.io')
 const env = require('../config/env')
@@ -16,7 +11,7 @@ function init(httpServer) {
     cors: { origin: env.clientUrls, credentials: true },
   })
 
-  // Authenticate the socket with the same JWT used for REST calls.
+   
   io.use((socket, next) => {
     const token =
       socket.handshake.auth?.token ||
@@ -50,7 +45,7 @@ function init(httpServer) {
   return io
 }
 
-/** Push a saved message to its receiver. Call this from the send-message controller. */
+//Push a saved message
 function emitNewMessage(message) {
   if (!io || !message) return
   io.to(message.receiverId).emit('new_message', message)

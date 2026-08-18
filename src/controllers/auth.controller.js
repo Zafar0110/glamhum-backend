@@ -12,14 +12,7 @@ const { serializeUser } = require('../utils/serializers')
 const otpService = require('../services/otp.service')
 const sms = require('../services/sms.service')
 const { buildArtistSlug } = require('../utils/slug')
-
-/**
- * Give an artist the readable slug their public profile is served under, e.g.
- * zafar-iqbal-hevanef820. Call it whenever the name or username changes.
- *
- * Two artists genuinely can share a name — the username keeps the slug unique —
- * but a counter is appended anyway so a clash can never break a save.
- */
+ 
 async function refreshArtistSlug(userId) {
   const user = await queryOne(
     'SELECT id, role, first_name, last_name, username FROM users WHERE id = ? LIMIT 1',
@@ -60,10 +53,7 @@ function validateRegistration({ firstName, lastName, username, email, password }
   if (Object.keys(errors).length) throw ApiError.validation(errors)
 }
 
-/**
- * Reject a username that belongs to somebody else.
- * `exceptUserId` lets an unverified account keep (or change) its own username.
- */
+ 
 async function assertUsernameFree(username, exceptUserId = null) {
   const clash = await queryOne(
     'SELECT id FROM users WHERE username = ? AND id <> ? LIMIT 1',
@@ -84,15 +74,7 @@ async function register(req, res, role) {
     [cleanEmail]
   )
 
-  /**
-   * A CONFIRMED account owns the address — nobody else can take it.
-   *
-   * "Confirmed" means EITHER channel. Sign-up verifies by SMS when
-   * OTP_CHANNEL=phone, which never sets is_email_verified, so checking only
-   * that flag left every phone-verified account re-registerable: the branch
-   * below reuses the same user row and overwrites its name, username, password
-   * and role, handing the account to whoever typed the address.
-   */
+   
   if (existing && (existing.is_email_verified || existing.is_phone_verified)) {
     throw ApiError.validation({ email: 'This email is already registered' })
   }
@@ -104,10 +86,7 @@ async function register(req, res, role) {
   let id
 
   if (existing) {
-    // Started sign-up before but never confirmed the code — that account is not
-    // really theirs yet, so let them go through again rather than locking the
-    // address away forever. The details are overwritten with what was just
-    // submitted and a fresh code goes out.
+    
     id = existing.id
     await assertUsernameFree(cleanUsername, id)
 
@@ -153,11 +132,10 @@ async function register(req, res, role) {
     )
   }
 
-  // Artists are browsable at /explore/<slug>, so they need one from the start.
+   
   const slug = role === 'artist' ? await refreshArtistSlug(id) : null
 
-  // SPEED: build the response from what we just wrote instead of re-selecting
-  // the row — one less round trip on the sign-up path.
+   
   const user = {
     id,
     slug,
@@ -178,9 +156,7 @@ async function register(req, res, role) {
 
   const token = signToken(user)
 
-  // With OTP_CHANNEL=phone the code goes out from /otp/send-phone once the
-  // user enters their number on the next screen — there is nothing to send
-  // yet here. With OTP_CHANNEL=email it is issued immediately.
+   
   if (env.otp.channel === 'phone') {
     return success(
       res,
@@ -198,7 +174,7 @@ async function register(req, res, role) {
     )
   }
 
-  // Email is queued in the background (mail.service never blocks the response).
+   
   const otp = await otpService.issue({
     identifier: cleanEmail,
     type: 'email',
@@ -225,13 +201,13 @@ async function register(req, res, role) {
   )
 }
 
-/** POST /auth/register/client */
+//POST /auth/register/client
 exports.registerClient = (req, res) => register(req, res, 'client')
 
-/** POST /auth/register/artist */
+//POST /auth/register/artist
 exports.registerArtist = (req, res) => register(req, res, 'artist')
 
-/** POST /auth/login — accepts { email } or { username } plus password. */
+//POST /auth/login — accepts
 exports.login = async (req, res) => {
   const { email, username, password, rememberMe } = req.body
   const identifier = (email || username || '').trim().toLowerCase()
@@ -239,15 +215,14 @@ exports.login = async (req, res) => {
   if (!identifier) throw ApiError.validation({ email: 'Email or username is required' })
   if (!password) throw ApiError.validation({ password: 'Password is required' })
 
-  // SPEED: pick the column so the query uses ONE unique index instead of
-  // forcing an index merge across uq_users_email + uq_users_username.
+   
   const column = identifier.includes('@') ? 'email' : 'username'
   const user = await queryOne(`SELECT * FROM users WHERE ${column} = ? LIMIT 1`, [identifier])
   if (!user) throw ApiError.unauthorized('Invalid credentials')
 
   const matches = await bcrypt.compare(password, user.password_hash)
   if (!matches) throw ApiError.unauthorized('Invalid credentials')
-  // Deactivated by an admin — refuse the sign-in outright.
+   
   if (!user.is_active) {
     throw ApiError.forbidden(
       'This account has been deactivated by an administrator. Please contact support.'
@@ -258,12 +233,12 @@ exports.login = async (req, res) => {
   return success(res, { user: serializeUser(user), token }, 'Signed in successfully', 200, { token })
 }
 
-/** GET /auth/me */
+//GET /auth/me
 exports.getMyProfile = async (req, res) => {
   return success(res, { user: serializeUser(req.user) })
 }
 
-/** PATCH /auth/profile */
+//PATCH /auth/profile
 exports.updateProfile = async (req, res) => {
   const allowed = {
     firstName: 'first_name',
@@ -291,15 +266,7 @@ exports.updateProfile = async (req, res) => {
     if (field === 'username') value = String(value).trim().toLowerCase()
     if (field === 'hasStudio') value = value ? 1 : 0
     if (field === 'phone' && String(value).trim()) {
-      /**
-       * Store E.164, the same form sendPhoneOTP writes.
-       *
-       * Saving the raw input here meant the same number could live as
-       * '971554082607' on one account and '+971554082607' on another. The
-       * "one phone per account" check compares strings, so the two never
-       * matched and a number could be reused — which is how two live accounts
-       * ended up sharing one mobile.
-       */
+       
       const e164 = sms.toE164(value, req.body.countryCode || req.user.country_code || '')
       if (!sms.isValidPhone(e164)) {
         throw ApiError.validation({ phone: 'Enter a valid phone number, including the country code' })
@@ -316,10 +283,7 @@ exports.updateProfile = async (req, res) => {
       value = e164
     }
     if (field === 'avatar') {
-      // `avatar` is a VARCHAR(255) path, not the picture itself. A base64 data
-      // URL would be silently truncated to 255 characters of garbage and the
-      // image would break everywhere it is shown — send the file to
-      // POST /auth/avatar instead.
+       
       if (String(value).startsWith('data:')) {
         throw ApiError.validation({
           avatar: 'Upload the image file to /auth/avatar rather than sending image data',
@@ -350,8 +314,7 @@ exports.updateProfile = async (req, res) => {
   values.push(req.user.id)
   await query(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, values)
 
-  // The profile URL is built from the name and username, so it has to follow
-  // them. The old slug stops resolving, which is why /explore/<id> still works.
+  
   if (
     req.body.firstName !== undefined ||
     req.body.lastName !== undefined ||
@@ -364,13 +327,7 @@ exports.updateProfile = async (req, res) => {
   return success(res, { user: serializeUser(user) }, 'Profile updated successfully')
 }
 
-/**
- * POST /auth/avatar   (multipart, field name: `avatar`)
- *
- * Stores the picture on disk and keeps only its path in the database, so the
- * same URL can be served to every screen that shows the user — header,
- * dashboards, artist cards, reviews, bookings.
- */
+ //POST /auth/avatar
 exports.uploadAvatar = async (req, res) => {
   if (!req.file) throw ApiError.validation({ avatar: 'Choose an image to upload' })
 
@@ -379,7 +336,7 @@ exports.uploadAvatar = async (req, res) => {
 
   await query('UPDATE users SET avatar = ? WHERE id = ?', [url, req.user.id])
 
-  // Remove the file this one replaced — but never a bundled /images/... asset.
+   
   if (previous && previous.startsWith('/uploads/')) {
     fs.promises
       .unlink(path.join(uploadRoot, path.basename(previous)))
@@ -390,7 +347,7 @@ exports.uploadAvatar = async (req, res) => {
   return success(res, { user: serializeUser(user), avatar: url }, 'Profile photo updated')
 }
 
-/** DELETE /auth/avatar — go back to the default picture. */
+//DELETE /auth/avatar — go back to the default picture
 exports.removeAvatar = async (req, res) => {
   const previous = req.user.avatar
 
@@ -406,7 +363,7 @@ exports.removeAvatar = async (req, res) => {
   return success(res, { user: serializeUser(user) }, 'Profile photo removed')
 }
 
-/** PATCH /auth/password */
+//PATCH /auth/password
 exports.updatePassword = async (req, res) => {
   const { currentPassword, newPassword } = req.body
   if (!currentPassword) throw ApiError.validation({ currentPassword: 'Current password is required' })
@@ -423,23 +380,17 @@ exports.updatePassword = async (req, res) => {
   return success(res, {}, 'Password updated successfully')
 }
 
-/**
- * POST /auth/logout
- * Tokens are stateless JWTs, so logout is client-side (drop the token).
- * Kept as an endpoint because the frontend calls it. Add a token denylist
- * table here if you later need server-side invalidation.
- */
+//POST /auth/logout
 exports.logout = async (req, res) => success(res, {}, 'Logged out successfully')
 
-/** POST /auth/forgot-password — issues an OTP to the account email. */
+//POST /auth/forgot-password
 exports.forgotPassword = async (req, res) => {
   const email = (req.body.email || '').trim().toLowerCase()
   if (!email || !EMAIL_RE.test(email)) throw ApiError.validation({ email: 'Enter a valid email address' })
 
   const user = await queryOne('SELECT id, first_name FROM users WHERE email = ? LIMIT 1', [email])
 
-  // Always answer the same way so the endpoint cannot be used to discover
-  // which emails have accounts.
+   
   if (!user) {
     return success(res, {}, 'If that email is registered, a reset code has been sent')
   }
@@ -459,7 +410,7 @@ exports.forgotPassword = async (req, res) => {
   )
 }
 
-/** POST /auth/reset-password — verifies the OTP then sets the new password. */
+//POST /auth/reset-password
 exports.resetPassword = async (req, res) => {
   const { email, otp, password } = req.body
   if (!email) throw ApiError.validation({ email: 'Email is required' })

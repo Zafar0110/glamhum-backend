@@ -1,12 +1,4 @@
-// Chat between a client and an artist.
-//
-// A conversation is one counterparty (the artist, or the client), and it exists
-// as soon as a booking exists — so a client who has just booked immediately
-// sees the artist in their list, with no messages yet. Message threads are
-// keyed by appointment id.
-//
-// SPEED: a conversation list is 3 indexed queries regardless of how many
-// bookings or messages exist — never one query per conversation.
+ 
 
 const { v4: uuid } = require('uuid')
 const { query, queryOne } = require('../config/db')
@@ -15,21 +7,18 @@ const { success } = require('../utils/response')
 const { serializeMessage, absoluteUpload } = require('../utils/serializers')
 const sockets = require('../sockets')
 
-/** Column names for the viewer and the person they are talking to. */
+//Column names for the viewer and the person they are talking to
 function sidesFor(role) {
   return role === 'artist'
     ? { me: 'artist_id', other: 'client_id' }
     : { me: 'client_id', other: 'artist_id' }
 }
 
-/**
- * GET /api/{client|artist}/messages/conversations
- * One row per counterparty, newest activity first.
- */
+//GET /api/{client|artist}/messages/conversations
 exports.getConversations = async (req, res) => {
   const { me, other } = sidesFor(req.user.role)
 
-  // 1. Every booking with this user, plus who it is with.
+  //Every booking with this user, plus who it is with
   const appointments = await query(
     `SELECT a.id, a.appointment_date, a.status, a.${other} AS other_id,
             u.first_name, u.last_name, u.avatar, u.city, u.specialty
@@ -45,7 +34,7 @@ exports.getConversations = async (req, res) => {
   const appointmentIds = appointments.map((row) => row.id)
   const placeholders = appointmentIds.map(() => '?').join(',')
 
-  // 2. Unread counts + 3. the latest message per thread — two grouped queries.
+  // Unread counts + 3. the latest message per thread — two grouped queries
   const [unreadRows, latestRows] = await Promise.all([
     query(
       `SELECT appointment_id, COUNT(*) AS unread
@@ -54,9 +43,7 @@ exports.getConversations = async (req, res) => {
         GROUP BY appointment_id`,
       [...appointmentIds, req.user.id]
     ),
-    // Newest message per thread. Ordering by (created_at, id) and taking the
-    // first per appointment in JS avoids the duplicate rows a MAX() self-join
-    // returns when two messages share a timestamp.
+    
     query(
       `SELECT * FROM messages
         WHERE appointment_id IN (${placeholders})
@@ -79,12 +66,9 @@ exports.getConversations = async (req, res) => {
   for (const row of appointments) {
     if (!byPerson.has(row.other_id)) {
       byPerson.set(row.other_id, {
-        // Who the conversation is with.
+         
         userId: row.other_id,
-        // Thread id. This MUST be the appointment, not the person: the artist
-        // mapper reads `_id`/`id` as the thread to load messages for, and a
-        // user id there makes every thread come back empty. Filled in below
-        // once the newest appointment is known.
+         
         _id: null,
         id: null,
         appointmentId: null,
@@ -140,7 +124,7 @@ exports.getConversations = async (req, res) => {
   return success(res, { conversations }, 'OK', 200, { total: conversations.length })
 }
 
-/** The caller must be one of the two people on the appointment. */
+//The caller must be one of the two people on the appointment
 async function assertThreadAccess(appointmentId, user) {
   const appointment = await queryOne(
     'SELECT id, client_id, artist_id FROM appointments WHERE id = ? LIMIT 1',
@@ -154,19 +138,7 @@ async function assertThreadAccess(appointmentId, user) {
   return appointment
 }
 
-/**
- * GET /api/{client|artist}/messages/:appointmentId
- *
- * The appointment id names the thread, but the thread is the whole
- * conversation with that PERSON — every message between the two of them,
- * whichever booking it was sent against.
- *
- * getConversations groups by counterparty and sums unread across all their
- * bookings, while exposing only the newest appointment as the thread id.
- * Loading a single appointment therefore hid messages sent on an earlier
- * booking, and marking that one appointment read left those messages unread
- * forever — an "unseen" badge that could never be cleared.
- */
+//GET /api/{client|artist}/messages/:appointmentId
 exports.getMessages = async (req, res) => {
   const appointment = await assertThreadAccess(req.params.appointmentId, req.user)
   const otherId =
@@ -188,13 +160,7 @@ exports.getMessages = async (req, res) => {
   return success(res, { messages: rows.map(serializeMessage) }, 'OK', 200, { total: rows.length })
 }
 
-/**
- * POST /api/{client|artist}/messages
- * Body: { appointmentId, message, receiverId? }
- *
- * The receiver is derived from the appointment, so a caller cannot redirect a
- * message to someone who isn't part of the thread.
- */
+//POST /api/{client|artist}/messages
 exports.sendMessage = async (req, res) => {
   const { appointmentId, message } = req.body || {}
 
@@ -225,13 +191,7 @@ exports.sendMessage = async (req, res) => {
   return success(res, { message: payload }, 'Message sent', 201)
 }
 
-/**
- * PATCH /api/{client|artist}/messages/:appointmentId/read
- *
- * Clears the whole conversation with that person, matching what getMessages
- * just showed them. Scoping this to one appointment left messages from an
- * earlier booking permanently unread, because no screen could open them.
- */
+//PATCH /api/{client|artist}/messages/:appointmentId/read
 exports.markAsRead = async (req, res) => {
   const appointment = await assertThreadAccess(req.params.appointmentId, req.user)
   const otherId =
@@ -246,13 +206,7 @@ exports.markAsRead = async (req, res) => {
   return success(res, { updated: result.affectedRows || 0 }, 'Messages marked as read')
 }
 
-/**
- * GET /api/{client|artist}/messages/unread-count
- *
- * One number for the Messages tab badge. Deliberately tiny — it is polled and
- * re-fetched on every incoming socket message, so it must stay a single
- * indexed count rather than loading conversations just to add them up.
- */
+//GET /api/{client|artist}/messages/unread-count
 exports.getUnreadCount = async (req, res) => {
   const row = await queryOne(
     'SELECT COUNT(*) AS unread FROM messages WHERE receiver_id = ? AND is_read = 0',

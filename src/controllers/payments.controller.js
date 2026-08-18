@@ -1,18 +1,8 @@
-// Payments: client card payments and artist earnings.
-//
-// Ledger model follows paymentController.js:
-//   deposit    — money in from a client (status 'succeeded')
-//   withdrawal — money out to the artist ('in_transit' then 'succeeded')
-//   refund     — money returned to a client
-//
-//   availableBalance = deposits − withdrawals − payoutsInTransit
-//
-// Money never moves without Stripe confirming it: we read the PaymentIntent
-// back rather than trusting what the browser tells us.
+ 
 
 const { v4: uuid } = require('uuid')
 const env = require('../config/env')
-const { query, queryOne } = require('../config/db')
+const { query, queryOne } = require('../config/db') 
 const ApiError = require('../utils/ApiError')
 const { success, paginated } = require('../utils/response')
 const stripe = require('../services/stripe.service')
@@ -21,20 +11,12 @@ const { parseAppointmentTime } = require('../services/appointments.service')
 
 const { getServiceFee } = require('../services/settings.service')
 
-/** Platform commission on a booking, in major units. */
+//Platform commission on a booking, in major units
 function commissionFor(amount) {
   return Math.round(Number(amount) * (env.stripe.commissionPercent / 100) * 100) / 100
 }
 
-// ---------------------------------------------------------------------------
-// Client — paying for a booking
-// ---------------------------------------------------------------------------
-
-/**
- * POST /api/client/payments/prepare
- * Creates a PaymentIntent BEFORE the booking exists, so a failed card never
- * leaves an orphaned appointment behind. Returns the client secret for Stripe.js.
- */
+//POST /api/client/payments/prepare
 exports.preparePayment = async (req, res) => {
   if (!env.stripe.configured) {
     throw ApiError.badRequest('Online payment is not available yet. Please choose pay at venue.')
@@ -62,15 +44,12 @@ exports.preparePayment = async (req, res) => {
   }
 
   const servicesTotal = services.reduce((sum, service) => sum + Number(service.price), 0)
-  // Read per booking: the admin can change the fee at any time.
+   
   const serviceFee = await getServiceFee()
   const total = servicesTotal + serviceFee
   const currency = artist.currency || 'AED'
 
-  // Check the slot BEFORE the card is charged. The booking is only created
-  // after payment succeeds, so without this a client could pay for a time that
-  // was taken while they were typing their card details — money gone, no
-  // appointment, and a refund to chase.
+   
   if (req.body.appointmentDate) {
     const totalMinutes =
       services.reduce((sum, service) => sum + (Number(service.duration_minutes) || 60), 0) || 60
@@ -80,10 +59,7 @@ exports.preparePayment = async (req, res) => {
     if (!slot.available) throw ApiError.conflict(slot.reason)
   }
 
-  // ESCROW: the full amount is charged to the PLATFORM account and held there.
-  // Nothing is sent to the artist at this point — the money is only released
-  // when the artist marks the appointment completed (see releaseEscrow), so a
-  // client who never receives the service can still be refunded in full.
+   
   const intent = await stripe.createPaymentIntent({
     amount: total,
     currency,
@@ -103,15 +79,9 @@ exports.preparePayment = async (req, res) => {
   })
 }
 
-/**
- * POST /api/client/payments/prepare-booking
- *
- * A PaymentIntent for a booking that already exists — the "Pay Booking" action
- * on a pay-at-venue appointment the client decides to settle by card.
- *
- * Unlike preparePayment the appointment is already there, so the amount comes
- * from the booking itself rather than being recalculated from services.
- */
+//POST /api/client/payments/prepare-booking
+
+
 exports.prepareBookingPayment = async (req, res) => {
   if (!env.stripe.configured) {
     throw ApiError.badRequest('Online payment is not available yet. Please pay at the venue.')
@@ -135,8 +105,7 @@ exports.prepareBookingPayment = async (req, res) => {
   const amount = Number(appointment.total_price)
   if (amount <= 0) throw ApiError.badRequest('There is nothing to pay on this booking')
 
-  // Same escrow rule as a new booking: the money is held on the platform and
-  // only released when the artist marks the appointment completed.
+   
   const intent = await stripe.createPaymentIntent({
     amount,
     currency: appointment.currency || 'AED',
@@ -156,11 +125,8 @@ exports.prepareBookingPayment = async (req, res) => {
   })
 }
 
-/**
- * POST /api/client/payments/confirm
- * Called after Stripe.js reports success. The PaymentIntent is re-read from
- * Stripe — never trust the browser — and only then is the booking created.
- */
+//POST /api/client/payments/confirm
+
 exports.confirmPayment = async (req, res) => {
   const { paymentIntentId } = req.body || {}
   if (!paymentIntentId) throw ApiError.validation({ paymentIntentId: 'Payment reference is required' })
@@ -173,9 +139,7 @@ exports.confirmPayment = async (req, res) => {
   // The booking is created by the client controller, which owns that logic.
   const { createPaidBooking } = require('./client.controller')
   const booking = await createPaidBooking(req, {
-    paymentIntentId,
-    // Stored on the booking so the escrow payout can be drawn from this exact
-    // charge when the artist completes the job.
+    paymentIntentId, 
     chargeId: intent.latest_charge || null,
     amountPaid: stripe.fromMinorUnits(intent.amount_received || intent.amount, intent.currency),
   })
@@ -183,10 +147,8 @@ exports.confirmPayment = async (req, res) => {
   return success(res, { booking, appointment: booking }, 'Payment received and booking confirmed', 201)
 }
 
-/**
- * POST /api/client/payments/process
- * Pays for a booking that already exists (the "Pay Booking" action).
- */
+//POST /api/client/payments/process
+
 exports.processPayment = async (req, res) => {
   const { appointmentId, paymentIntentId } = req.body || {}
   if (!appointmentId) throw ApiError.validation({ appointmentId: 'Booking is required' })
@@ -202,10 +164,7 @@ exports.processPayment = async (req, res) => {
     throw ApiError.badRequest(`Payment has not completed (status: ${intent.status})`)
   }
 
-  // Take the fee from the BOOKING, not the constant. An appointment the artist
-  // added themselves carries no platform service fee, so subtracting a flat 150
-  // drove the payout negative: 100 − 150 − commission = −45 AED owed to the
-  // artist, recorded as a negative deposit.
+   
   const servicesTotal = Number(appointment.total_price) - Number(appointment.service_fee || 0)
   const payout = servicesTotal - commissionFor(servicesTotal)
 
@@ -221,8 +180,7 @@ exports.processPayment = async (req, res) => {
     artistId: appointment.artist_id,
     clientId: appointment.client_id,
     appointmentId: appointment.id,
-    type: 'deposit',
-    // Held in escrow until the artist completes the appointment.
+    type: 'deposit', 
     status: 'pending',
     amount: payout,
     currency: appointment.currency,
@@ -233,7 +191,7 @@ exports.processPayment = async (req, res) => {
   return success(res, {}, 'Payment processed successfully')
 }
 
-/** GET /api/client/payments/:paymentIntentId/status */
+//GET /api/client/payments/:paymentIntentId/status
 exports.getPaymentIntentStatus = async (req, res) => {
   const intent = await stripe.retrievePaymentIntent(req.params.paymentIntentId)
   return success(res, {
@@ -244,10 +202,8 @@ exports.getPaymentIntentStatus = async (req, res) => {
   })
 }
 
-/**
- * POST /api/client/payments/refund
- * Refund policy: full refund before the cutoff, reduced after it.
- */
+//POST /api/client/payments/refund
+
 exports.refundPayment = async (req, res) => {
   const { appointmentId, reason } = req.body || {}
   if (!appointmentId) throw ApiError.validation({ appointmentId: 'Booking is required' })
@@ -283,25 +239,14 @@ exports.refundPayment = async (req, res) => {
   )
 }
 
-/**
- * Send money back to the client and unwind everything that depended on the
- * payment. Shared by the client's own cancellation and by an artist declining
- * a booking, so the ledger ends up in the same state either way.
- *
- * Returns { refunded: false } for bookings with nothing to refund (pay at
- * venue, or already refunded) rather than throwing — the caller usually still
- * wants to cancel the appointment.
- */
+ 
 async function issueRefund(appointment, { amount, reason } = {}) {
   if (appointment.payment_status !== 'paid' || !appointment.payment_intent_id) {
     return { refunded: false, reason: 'nothing_to_refund' }
   }
 
   const refundAmount = amount === undefined ? Number(appointment.total_price) : Number(amount)
-  if (refundAmount <= 0) return { refunded: false, reason: 'nothing_to_refund' }
-
-  // If the escrow was already released, claw the artist's share back before
-  // refunding — otherwise the refund comes out of the platform's own money.
+  if (refundAmount <= 0) return { refunded: false, reason: 'nothing_to_refund' } 
   if (appointment.stripe_transfer_id) {
     await stripe.reverseTransfer(appointment.stripe_transfer_id, undefined, appointment.currency)
     await query(
@@ -345,13 +290,11 @@ async function issueRefund(appointment, { amount, reason } = {}) {
   return { refunded: true, amount: refundAmount, refundId: refund.id }
 }
 
+
+//One ledger row
 exports.issueRefund = issueRefund
 
-// ---------------------------------------------------------------------------
-// Artist — earnings
-// ---------------------------------------------------------------------------
-
-/** One ledger row. */
+ 
 async function recordTransaction({ artistId, clientId, appointmentId, type, status, amount, currency, description, reference, bankDetails }) {
   await query(
     `INSERT INTO transactions
@@ -373,16 +316,7 @@ async function recordTransaction({ artistId, clientId, appointmentId, type, stat
   )
 }
 
-/**
- * GET /api/artist/payments/stats
- *
- * availableBalance = settled deposits − payouts already sent − withdrawals
- *
- * A deposit only counts once the appointment is completed; until then it is in
- * escrow and reported separately as `heldInEscrow`. Money released to the
- * artist's own Stripe account leaves this balance — Stripe is paying it out to
- * their bank, so it must not also be withdrawable here.
- */
+//GET /api/artist/payments/stats
 exports.getPaymentStats = async (req, res) => {
   const { period } = req.query
   const since =
@@ -410,13 +344,11 @@ exports.getPaymentStats = async (req, res) => {
   const earned = Number(totals.earned)
   const withdrawn = Number(totals.withdrawn)
   const paidOut = Number(totals.paidOut)
-  const withdrawalsInTransit = Number(totals.withdrawalsInTransit)
-  // Both routes out of the platform show together on the "in transit" card.
+  const withdrawalsInTransit = Number(totals.withdrawalsInTransit) 
   const inTransit = withdrawalsInTransit + Number(totals.payoutsInTransit)
   const round = (value) => Math.round(value * 100) / 100
 
-  return success(res, {
-    // Plain numbers: the Payments tab calls .toLocaleString() on these.
+  return success(res, { 
     availableBalance: round(Math.max(0, earned - paidOut - withdrawn - withdrawalsInTransit)),
     totalEarned: round(earned),
     heldInEscrow: round(Number(totals.held)),
@@ -450,10 +382,7 @@ exports.getAllTransactions = async (req, res) => {
     where.push('t.created_at >= ?')
     params.push(startDate)
   }
-  if (endDate) {
-    // Compare on the date alone. `created_at <= '2026-08-17'` means midnight,
-    // so every transaction made on the last day of the range — today, for
-    // "this month" — was filtered out.
+  if (endDate) { 
     where.push('DATE(t.created_at) <= ?')
     params.push(endDate)
   }
@@ -517,11 +446,7 @@ exports.requestWithdrawal = async (req, res) => {
   const { amount, bankDetails, description } = req.body || {}
   const value = Number(amount)
 
-  if (!value || value <= 0) throw ApiError.validation({ amount: 'Enter a valid withdrawal amount' })
-
-  // Only settled deposits count, and anything already sent to the artist —
-  // whether by Stripe payout or an earlier withdrawal — is no longer theirs to
-  // withdraw again.
+  if (!value || value <= 0) throw ApiError.validation({ amount: 'Enter a valid withdrawal amount' }) 
   const totals = await queryOne(
     `SELECT
        COALESCE(SUM(CASE WHEN type='deposit'    AND status='succeeded' THEN amount END),0) AS earned,
@@ -542,8 +467,7 @@ exports.requestWithdrawal = async (req, res) => {
 
   await recordTransaction({
     artistId: req.user.id,
-    type: 'withdrawal',
-    // in_transit until the payout actually lands.
+    type: 'withdrawal', 
     status: 'in_transit',
     amount: value,
     currency: 'AED',
@@ -557,12 +481,8 @@ exports.requestWithdrawal = async (req, res) => {
 exports.recordTransaction = recordTransaction
 exports.commissionFor = commissionFor
 exports.getServiceFee = getServiceFee
-
-// ---------------------------------------------------------------------------
-// Stripe Connect — so artists can be paid directly
-// ---------------------------------------------------------------------------
-
-/** GET /api/artist/stripe/status */
+ 
+//GET /api/artist/stripe/status
 exports.getStripeConnectStatus = async (req, res) => {
   if (!env.stripe.configured) {
     return success(res, {
@@ -589,9 +509,7 @@ exports.getStripeConnectStatus = async (req, res) => {
       message: 'Connect a payout account to accept online payments.',
     })
   }
-
-  // Ask Stripe rather than trusting our cached copy — capabilities change
-  // as the artist completes onboarding or documents expire.
+ 
   try {
     const account = await stripe.retrieveAccount(row.stripe_account_id)
     const requirementsDue = account.requirements?.currently_due || []
@@ -616,9 +534,7 @@ exports.getStripeConnectStatus = async (req, res) => {
     return success(res, {
       stripeConfigured: true,
       hasConnectAccount: true,
-      onboardingComplete,
-      // In transfers-only countries (UAE) the platform is the merchant of
-      // record, so report the artist as able to be paid when transfers work.
+      onboardingComplete, 
       chargesEnabled: Boolean(account.charges_enabled || transfersEnabled),
       payoutsEnabled: Boolean(account.payouts_enabled),
       transfersEnabled,
@@ -628,7 +544,7 @@ exports.getStripeConnectStatus = async (req, res) => {
     })
   } catch (error) {
     console.error('[stripe] could not read connected account:', error.message)
-    // Fall back to the cached values rather than failing the dashboard.
+     
     return success(res, {
       stripeConfigured: true,
       hasConnectAccount: true,
@@ -642,11 +558,7 @@ exports.getStripeConnectStatus = async (req, res) => {
   }
 }
 
-/**
- * POST /api/artist/stripe/connect-link
- * Body: { returnUrl, refreshUrl }
- * Creates the account on first use, then returns the onboarding URL.
- */
+//POST /api/artist/stripe/connect-link
 exports.createStripeConnectLink = async (req, res) => {
   if (!env.stripe.configured) {
     throw ApiError.badRequest('Online payments are not switched on yet.')
@@ -678,7 +590,7 @@ exports.createStripeConnectLink = async (req, res) => {
   return success(res, { url: link.url, accountId: row.stripe_account_id }, 'Continue on Stripe to finish setup')
 }
 
-/** GET /api/artist/stripe/dashboard-link */
+//GET /api/artist/stripe/dashboard-link
 exports.getStripeDashboardLink = async (req, res) => {
   const row = await queryOne('SELECT * FROM stripe_accounts WHERE artist_id = ? LIMIT 1', [req.user.id])
   if (!row) throw ApiError.badRequest('Connect a payout account first')
@@ -686,28 +598,7 @@ exports.getStripeDashboardLink = async (req, res) => {
   const link = await stripe.createLoginLink(row.stripe_account_id)
   return success(res, { url: link.url })
 }
-
-// ---------------------------------------------------------------------------
-// Escrow release
-// ---------------------------------------------------------------------------
-
-/**
- * Pay the artist for a completed appointment.
- *
- * The client's money has been sitting on the PLATFORM account since the
- * booking was paid. Completing the job is what releases it:
- *
- *   client paid        250 AED   (service 100 + service fee 150)
- *     -> artist gets     90 AED   (service 100 − 10% commission)
- *     -> platform keeps 160 AED   (service fee 150 + commission 10)
- *
- * The transfer is drawn from the original charge (`source_transaction`), so we
- * can never pay out money we did not actually collect, and it works before the
- * platform balance has settled.
- *
- * Safe to call more than once: a booking that already has a transfer is
- * skipped rather than paid twice.
- */
+ 
 async function releaseEscrow(appointment) {
   // Nothing to release for cash-at-venue bookings.
   if (appointment.payment_status !== 'paid') {
@@ -720,8 +611,7 @@ async function releaseEscrow(appointment) {
   const payout = Number(appointment.artist_payout_amount || 0)
   if (payout <= 0) return { released: false, reason: 'nothing_to_pay' }
 
-  // Same rule as the payout itself: the fee is whatever the booking recorded.
-  const commission = commissionFor(Number(appointment.total_price) - Number(appointment.service_fee || 0))
+   const commission = commissionFor(Number(appointment.total_price) - Number(appointment.service_fee || 0))
 
   const connect = await queryOne(
     'SELECT stripe_account_id, transfers_enabled, payouts_enabled FROM stripe_accounts WHERE artist_id = ? LIMIT 1',
@@ -729,8 +619,7 @@ async function releaseEscrow(appointment) {
   )
 
   // No connected account yet: the job is still done and earned, so unlock the
-  // deposit into the artist's available balance. They can either finish Stripe
-  // onboarding or request a manual withdrawal.
+   
   if (!connect || !(connect.transfers_enabled || connect.payouts_enabled)) {
     await settleDeposit(appointment.id)
     await query(
@@ -743,11 +632,9 @@ async function releaseEscrow(appointment) {
   const transfer = await stripe.createTransfer({
     amount: payout,
     currency: appointment.currency || 'AED',
-    destination: connect.stripe_account_id,
-    // Draw on the charge that funded this booking.
+    destination: connect.stripe_account_id, 
     sourceTransaction: appointment.stripe_charge_id || undefined,
-    metadata: { appointmentId: appointment.id, artistId: appointment.artist_id },
-    // Re-running completion must not pay twice.
+    metadata: { appointmentId: appointment.id, artistId: appointment.artist_id }, 
     idempotencyKey: `payout_${appointment.id}`,
   })
 
@@ -758,11 +645,8 @@ async function releaseEscrow(appointment) {
     [transfer.id, appointment.id]
   )
 
-  // The held deposit is now genuinely earned...
-  await settleDeposit(appointment.id)
-
-  // ...and immediately on its way out to the artist's own Stripe account, so
-  // it is recorded as a payout rather than left sitting in their balance.
+   
+  await settleDeposit(appointment.id) 
   await recordTransaction({
     artistId: appointment.artist_id,
     clientId: appointment.client_id,
@@ -778,13 +662,7 @@ async function releaseEscrow(appointment) {
   return { released: true, transferId: transfer.id, amount: payout, commission }
 }
 
-/**
- * Move a booking's held deposit from 'pending' to 'succeeded'.
- *
- * Deposits are recorded as pending the moment a client pays, because that money
- * is in escrow — earned on paper, but not the artist's until the job is done.
- * Completing the appointment is what makes it count.
- */
+ 
 async function settleDeposit(appointmentId) {
   await query(
     "UPDATE transactions SET status = 'succeeded' WHERE appointment_id = ? AND type = 'deposit' AND status = 'pending'",

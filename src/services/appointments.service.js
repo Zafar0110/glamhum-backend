@@ -1,15 +1,9 @@
-// Shared appointment helpers for the client (booking) and artist (dashboard)
-// sides, so both read exactly the same shape.
+ 
 
 const { query } = require('../config/db')
 const { serializeAppointment } = require('../utils/serializers')
 
-/**
- * The booking screen sends times in several shapes:
- *   'morning (8AM - 12PM)' | 'afternoon (12PM - 4PM)' | 'evening (4PM - 8PM)'
- *   '14:00 - 15:00'  |  '09:00'
- * Everything is normalised to { startTime, endTime } in 24h HH:MM:SS.
- */
+ 
 const NAMED_SLOTS = {
   morning: ['08:00:00', '12:00:00'],
   afternoon: ['12:00:00', '16:00:00'],
@@ -53,11 +47,11 @@ function parseAppointmentTime(input, fallbackDurationMinutes = 60) {
     if (startTime) return { startTime, endTime: addMinutes(startTime, fallbackDurationMinutes) }
   }
 
-  // Single time — derive the end from the services' total duration.
+  // Single time  
   const startTime = to24h(raw)
   if (startTime) return { startTime, endTime: addMinutes(startTime, fallbackDurationMinutes) }
 
-  // Nothing usable: default to the morning slot rather than failing the booking.
+  // Nothing usable: 
   return { startTime: NAMED_SLOTS.morning[0], endTime: NAMED_SLOTS.morning[1] }
 }
 
@@ -67,17 +61,14 @@ function addMinutes(time, minutes) {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}:00`
 }
 
-/** '2h 30m' -> 150 */
+ 
 function durationToMinutes(duration = '') {
   const hours = /(\d+)\s*h/i.exec(duration)
   const minutes = /(\d+)\s*m/i.exec(duration)
   return (hours ? parseInt(hours[1], 10) * 60 : 0) + (minutes ? parseInt(minutes[1], 10) : 0)
 }
 
-/**
- * Load appointments plus their line items, client and artist — in a fixed
- * number of queries regardless of how many appointments there are.
- */
+ 
 async function hydrateAppointments(rows) {
   if (!rows.length) return []
 

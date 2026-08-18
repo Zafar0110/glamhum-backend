@@ -1,8 +1,4 @@
-// Authentication + role guards.
-//
-//   router.get('/me', authenticate, handler)
-//   router.get('/admin/stats', authenticate, authorize('admin'), handler)
-
+ 
 const ApiError = require('../utils/ApiError')
 const { verifyToken } = require('../utils/jwt')
 const { queryOne } = require('../config/db')
@@ -13,7 +9,7 @@ function extractToken(req) {
   return null
 }
 
-/** Requires a valid token; loads the user row onto req.user. */
+//Requires a valid token; loads the user row onto req.user
 async function authenticate(req, res, next) {
   try {
     const token = extractToken(req)
@@ -40,7 +36,7 @@ async function authenticate(req, res, next) {
   }
 }
 
-/** Restricts a route to one or more roles. Use after authenticate. */
+//Restricts a route to one or more roles. Use after authenticate
 function authorize(...roles) {
   return function guard(req, res, next) {
     if (!req.user) return next(ApiError.unauthorized())
@@ -51,16 +47,7 @@ function authorize(...roles) {
   }
 }
 
-/**
- * Blocks artist dashboard data until an admin has approved the account.
- *
- * Use AFTER authenticate + authorize('artist'), and only on real dashboard
- * routes — onboarding (profile, services, portfolio, submit-profile) must stay
- * reachable or the artist can never complete the profile being reviewed.
- *
- * The 403 body carries approvalStatus so the frontend can show the right
- * screen instead of a generic error.
- */
+//Blocks artist dashboard data until an admin has approved the account
 function requireApprovedArtist(req, res, next) {
   if (!req.user) return next(ApiError.unauthorized())
   if (req.user.role !== 'artist') return next()
@@ -80,7 +67,7 @@ function requireApprovedArtist(req, res, next) {
   })
 }
 
-/** Attaches req.user when a valid token is present, but never rejects. */
+//Attaches req.user when a valid token
 async function optionalAuth(req, res, next) {
   const token = extractToken(req)
   if (!token) return next()

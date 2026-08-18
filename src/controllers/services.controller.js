@@ -1,5 +1,4 @@
-// The signed-in artist's service catalogue (onboarding step 2 + the dashboard
-// "My Services" tab).
+ 
 
 const { v4: uuid } = require('uuid')
 const { query, queryOne, transaction } = require('../config/db')
@@ -7,7 +6,7 @@ const ApiError = require('../utils/ApiError')
 const { success } = require('../utils/response')
 const { serializeService } = require('../utils/serializers')
 
-/** '2h 30m' -> 150. Stored alongside the display string for scheduling maths. */
+ 
 function durationToMinutes(duration = '') {
   const hours = /(\d+)\s*h/i.exec(duration)
   const minutes = /(\d+)\s*m/i.exec(duration)
@@ -41,7 +40,8 @@ function validateService(body, { partial = false } = {}) {
   if (Object.keys(errors).length) throw ApiError.validation(errors)
 }
 
-/** Attach add-ons to a list of services in ONE query (no N+1). */
+//Attach add-ons to a list of services
+
 async function withAddOns(serviceRows) {
   if (!serviceRows.length) return []
 
@@ -62,7 +62,7 @@ async function withAddOns(serviceRows) {
   return serviceRows.map((row) => serializeService(row, byService.get(row.id) || []))
 }
 
-/** Replace a service's add-ons inside an existing transaction connection. */
+//Replace a service's add-ons inside an existing transaction connection
 async function replaceAddOns(connection, serviceId, addOns) {
   await connection.execute('DELETE FROM service_addons WHERE service_id = ?', [serviceId])
 
@@ -83,7 +83,7 @@ async function replaceAddOns(connection, serviceId, addOns) {
   }
 }
 
-/** Confirm the service exists AND belongs to the caller. */
+//Confirm the service exists AND belongs to the caller
 async function ownedService(serviceId, artistId) {
   const service = await queryOne('SELECT * FROM services WHERE id = ? LIMIT 1', [serviceId])
   if (!service) throw ApiError.notFound('Service not found')
@@ -91,11 +91,8 @@ async function ownedService(serviceId, artistId) {
   return service
 }
 
-/**
- * GET /api/services?status=active|archived|all
- * Defaults to active. Archived services keep their data but are hidden from
- * clients and excluded from the artist's "from" price.
- */
+//GET /api/services?status=active|archived|all
+
 exports.getMyServices = async (req, res) => {
   const status = ['active', 'archived', 'all'].includes(req.query.status) ? req.query.status : 'active'
 
@@ -111,14 +108,15 @@ exports.getMyServices = async (req, res) => {
   return success(res, { services }, 'OK', 200, { count: services.length, total: services.length })
 }
 
-/** GET /api/services/:id */
+//GET /api/services/:id
+
 exports.getServiceById = async (req, res) => {
   const service = await ownedService(req.params.id, req.user.id)
   const [withOns] = await withAddOns([service])
   return success(res, { service: withOns })
 }
 
-/** POST /api/services */
+//POST /api/services
 exports.createService = async (req, res) => {
   validateService(req.body)
 
@@ -153,12 +151,12 @@ exports.createService = async (req, res) => {
   const service = await ownedService(id, req.user.id)
   const [withOns] = await withAddOns([service])
 
-  // `id`/`_id` are repeated at the top level because the onboarding screen
-  // reads response.data.id straight off the envelope.
+   
   return success(res, { service: withOns, id, _id: id }, 'Service created successfully', 201)
 }
 
-/** PATCH /api/services/:id */
+//PATCH /api/services/:id
+
 exports.updateService = async (req, res) => {
   await ownedService(req.params.id, req.user.id)
   validateService(req.body, { partial: true })
@@ -209,17 +207,13 @@ exports.updateService = async (req, res) => {
   return success(res, { service: withOns }, 'Service updated successfully')
 }
 
-/**
- * POST /api/services/:id/duplicate
- * Copies the service and its add-ons in one transaction. The copy is created
- * as ACTIVE even when duplicating an archived service, since duplicating is
- * how an artist reuses an old service as a starting point.
- */
+//POST /api/services/:id/duplicate
+
 exports.duplicateService = async (req, res) => {
   const original = await ownedService(req.params.id, req.user.id)
   const newId = uuid()
 
-  // "Bridal Trial" -> "Bridal Trial (Copy)" -> "Bridal Trial (Copy 2)" ...
+  
   const base = `${original.service_name} (Copy`
   const [{ taken }] = await query(
     'SELECT COUNT(*) AS taken FROM services WHERE artist_id = ? AND service_name LIKE ?',
@@ -269,11 +263,7 @@ exports.duplicateService = async (req, res) => {
   return success(res, { service: withOns, id: newId, _id: newId }, 'Service duplicated', 201)
 }
 
-/**
- * PATCH /api/services/:id/archive   Body: { archived?: boolean }
- * Archiving hides the service from clients without deleting it, so past
- * bookings and their line items stay intact.
- */
+//PATCH /api/services/:id/archive
 exports.archiveService = async (req, res) => {
   await ownedService(req.params.id, req.user.id)
 
@@ -291,7 +281,7 @@ exports.archiveService = async (req, res) => {
   )
 }
 
-/** DELETE /api/services/:id */
+//DELETE /api/services/:id
 exports.deleteService = async (req, res) => {
   await ownedService(req.params.id, req.user.id)
   // service_addons cascade; appointment_services keeps its snapshot via ON DELETE SET NULL.
@@ -300,7 +290,7 @@ exports.deleteService = async (req, res) => {
   return success(res, {}, 'Service deleted successfully')
 }
 
-/** users.min_price drives the "from AED x" badge in the public directory. */
+//users.min_price drives
 async function refreshMinPrice(artistId) {
   await query(
     `UPDATE users

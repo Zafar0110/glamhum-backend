@@ -1,7 +1,4 @@
-// Artist portfolio gallery (onboarding step 3 + the dashboard Profile tab).
-//
-// Files are written to <UPLOAD_DIR>/ by multer and served from /uploads/<file>.
-// The DB only stores the public path.
+ 
 
 const fs = require('fs')
 const path = require('path')
@@ -13,28 +10,27 @@ const { uploadRoot, publicUrl } = require('../middleware/upload')
 
 const MAX_IMAGES = 20
 
-/** GET /api/portfolio/:artistId — public (artist profile page). */
+//GET /api/portfolio/:artistId — public
 exports.getPortfolioImages = async (req, res) => {
   const rows = await query(
     'SELECT id, image_url FROM portfolio_images WHERE artist_id = ? ORDER BY sort_order ASC, created_at ASC',
     [req.params.artistId]
   )
 
-  // Two shapes because different screens read different keys: a flat list of
-  // paths, plus objects carrying the id needed for deletion.
+   
   return success(res, {
     images: rows.map((row) => ({ _id: row.id, id: row.id, url: row.image_url, imageUrl: row.image_url })),
     portfolioImages: rows.map((row) => row.image_url),
   })
 }
 
-/** GET /api/portfolio — the signed-in artist's own gallery. */
+ //GET /api/portfolio
 exports.getMyPortfolio = async (req, res) => {
   req.params.artistId = req.user.id
   return exports.getPortfolioImages(req, res)
 }
 
-/** POST /api/portfolio — multipart, field name "images". */
+//POST /api/portfolio
 exports.uploadPortfolioImages = async (req, res) => {
   const files = req.files || []
   if (!files.length) throw ApiError.validation({ images: 'Please choose at least one image' })
@@ -83,10 +79,7 @@ exports.uploadPortfolioImages = async (req, res) => {
   )
 }
 
-/**
- * DELETE /api/portfolio
- * Body: { imageUrl } or { id }. The onboarding screen sends the stored path.
- */
+//DELETE /api/portfolio
 exports.deletePortfolioImage = async (req, res) => {
   const { imageUrl, id } = req.body || {}
   if (!imageUrl && !id) throw ApiError.validation({ imageUrl: 'Image reference is required' })
@@ -101,10 +94,7 @@ exports.deletePortfolioImage = async (req, res) => {
   if (!row) throw ApiError.notFound('Image not found')
   if (row.artist_id !== req.user.id) throw ApiError.forbidden('This image belongs to another artist')
 
-  await query('DELETE FROM portfolio_images WHERE id = ?', [row.id])
-
-  // Remove the file too, but never fail the request over it — basename() keeps
-  // a crafted path from escaping the upload directory.
+  await query('DELETE FROM portfolio_images WHERE id = ?', [row.id]) 
   const filename = path.basename(row.image_url)
   fs.promises.unlink(path.join(uploadRoot, filename)).catch(() => {})
 

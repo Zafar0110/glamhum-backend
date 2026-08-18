@@ -1,5 +1,4 @@
-// Artist dashboard — everything under /dashboard/artist.
-// Every route requires a signed-in user with role = 'artist'.
+ 
 
 const express = require('express')
 const asyncHandler = require('../utils/asyncHandler')
@@ -14,30 +13,25 @@ const router = express.Router()
 
 router.use(authenticate, authorize('artist'))
 
-// --- onboarding / approval ----------------------------------------------
-// Reachable while pending: the artist has to be able to finish and resubmit
-// the very profile that is under review.
+ 
 router.get('/profile-status', asyncHandler(controller.getProfileStatus))
 router.post('/submit-profile', asyncHandler(controller.submitProfile))
 
-// ---------------------------------------------------------------------------
-// Everything below is real dashboard data and stays closed until an admin
-// approves the account.
-// ---------------------------------------------------------------------------
+ 
 router.use(requireApprovedArtist)
 
-// --- clients -------------------------------------------------------------
+ 
 router.get('/clients', asyncHandler(schedule.getAllClients))
 router.get('/clients/:clientId', asyncHandler(schedule.getClientById))
 
-// --- appointments --------------------------------------------------------
+// --- appointments 
 router.get('/appointments', asyncHandler(controller.getAllAppointments))
 router.post('/appointments', asyncHandler(schedule.createAppointment))
 router.get('/appointments/:appointmentId', asyncHandler(controller.getAppointmentById))
 router.patch('/appointments/:appointmentId/status', asyncHandler(controller.updateAppointmentStatus))
 router.patch('/appointments/:appointmentId/reschedule', asyncHandler(schedule.rescheduleAppointment))
 
-// --- schedule: blocked time & vacations ----------------------------------
+// --- schedule: blocked time & vacations  
 router.get('/blocked-time', asyncHandler(schedule.getBlockedTime))
 router.post('/blocked-time', asyncHandler(schedule.createBlockedTime))
 router.patch('/blocked-time/:blockedTimeId', asyncHandler(schedule.updateBlockedTime))
@@ -48,16 +42,16 @@ router.post('/vacations', asyncHandler(schedule.createVacation))
 router.patch('/vacations/:vacationId', asyncHandler(schedule.updateVacation))
 router.delete('/vacations/:vacationId', asyncHandler(schedule.deleteVacation))
 
-// --- payments ------------------------------------------------------------
+// --- payments 
 router.get('/payments/stats', asyncHandler(payments.getPaymentStats))
 router.get('/payments/transactions', asyncHandler(payments.getAllTransactions))
 router.post('/payments/withdrawals', asyncHandler(payments.requestWithdrawal))
 
-// --- reviews -------------------------------------------------------------
+// --- reviews  
 router.get('/reviews', asyncHandler(controller.getArtistReviews))
 router.get('/reviews/:reviewId', notImplemented('artistAPI.getReviewById'))
 
-// --- messages ------------------------------------------------------------
+// --- messages  
 router.get('/messages/conversations', asyncHandler(messages.getConversations))
 // Registered before /messages/:appointmentId so the param route cannot swallow it.
 router.get('/messages/unread-count', asyncHandler(messages.getUnreadCount))
@@ -65,7 +59,7 @@ router.get('/messages/:appointmentId', asyncHandler(messages.getMessages))
 router.post('/messages', asyncHandler(messages.sendMessage))
 router.patch('/messages/:appointmentId/read', asyncHandler(messages.markAsRead))
 
-// --- stripe connect ------------------------------------------------------
+// --- stripe connect  
 router.get('/stripe/status', asyncHandler(payments.getStripeConnectStatus))
 router.post('/stripe/connect-link', asyncHandler(payments.createStripeConnectLink))
 router.get('/stripe/dashboard-link', asyncHandler(payments.getStripeDashboardLink))

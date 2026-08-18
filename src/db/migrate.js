@@ -1,9 +1,4 @@
-// Creates the database (if missing) and applies src/db/schema.sql.
-//
-//   npm run db:migrate            apply schema (safe to re-run)
-//   npm run db:migrate -- --fresh DROP the database first, then apply
-//
-// --fresh destroys all data; it prompts for nothing, so use it deliberately.
+ 
 
 const fs = require('fs')
 const path = require('path')
@@ -12,41 +7,24 @@ const env = require('../config/env')
 
 const FRESH = process.argv.includes('--fresh')
 
-/**
- * Columns added after the first release.
- *
- * schema.sql uses CREATE TABLE IF NOT EXISTS, which does nothing to a table
- * that already exists — so a column added later never reaches a database that
- * was migrated before. That is exactly how a live server ended up without
- * `appointments.stripe_charge_id` and rejected every card booking with a SQL
- * error. Each entry below is applied only when the column is missing, so this
- * is safe to re-run and safe on a fresh install.
- */
+ 
 const ADDED_COLUMNS = [
   ['appointments', 'stripe_charge_id', 'VARCHAR(120) NULL AFTER payment_intent_id'],
   ['appointments', 'stripe_transfer_id', 'VARCHAR(120) NULL AFTER stripe_charge_id'],
   ['otps', 'delivered_via', "VARCHAR(10) NOT NULL DEFAULT 'phone' AFTER type"],
   ['transactions', 'client_id', 'CHAR(36) NULL AFTER artist_id'],
   ['transactions', 'bank_details', 'JSON NULL AFTER reference'],
-  ['stripe_accounts', 'transfers_enabled', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER payouts_enabled'],
-  // The artist profile form had a "Years of Experience" field all along, but
-  // there was no column behind it, so nothing was ever saved.
-  ['users', 'years_of_experience', 'TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER specialty'],
-  // The add-on form has always had currency and duration pickers, but there
-  // were no columns behind them, so both were dropped on save.
+  ['stripe_accounts', 'transfers_enabled', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER payouts_enabled'], 
+  ['users', 'years_of_experience', 'TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER specialty'], 
   ['service_addons', 'currency', "CHAR(3) NOT NULL DEFAULT 'AED' AFTER price"],
-  ['service_addons', 'duration', 'VARCHAR(20) NULL AFTER currency'],
-  // Readable artist profile URLs. Backfilled below for existing artists.
+  ['service_addons', 'duration', 'VARCHAR(20) NULL AFTER currency'], 
   ['users', 'slug', 'VARCHAR(160) NULL AFTER specialty'],
 ]
 
-/** Unique indexes added after the first release. */
+ 
 const ADDED_UNIQUE_INDEXES = [['users', 'uq_users_slug', 'slug']]
 
-/**
- * ENUMs that gained values after the first release. MODIFY is idempotent —
- * re-running simply sets the same definition again.
- */
+ 
 const WIDENED_ENUMS = [
   [
     'transactions',
@@ -70,7 +48,7 @@ async function addMissingColumns(connection, database) {
     if (rows.length) continue
 
     await connection.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`)
-    console.log(`[migrate] added ${table}.${column}`)
+    // console.log(`[migrate] added ${table}.${column}`)
   }
 
   for (const [table, column, definition] of WIDENED_ENUMS) {
@@ -87,19 +65,11 @@ async function addMissingColumns(connection, database) {
     if (needed.every((value) => current.includes(value))) continue
 
     await connection.query(`ALTER TABLE \`${table}\` MODIFY COLUMN \`${column}\` ${definition}`)
-    console.log(`[migrate] widened ${table}.${column}`)
+    // console.log(`[migrate] widened ${table}.${column}`)
   }
 }
 
-/**
- * Give every artist a profile slug.
- *
- * Runs before the unique index is added, and skips anyone who already has one,
- * so it is safe to re-run. A duplicate slug (two artists with the same name AND
- * username, which the username's own unique index already prevents) would only
- * arise from hand-edited data; the counter suffix covers it rather than letting
- * the index creation fail.
- */
+ 
 async function backfillArtistSlugs(connection) {
   const { buildArtistSlug } = require('../utils/slug')
 

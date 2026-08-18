@@ -1,12 +1,4 @@
-// Email delivery (nodemailer).
-//
-// SPEED: the transporter is created ONCE and reused, with connection pooling
-// on. Creating a transporter per email costs a full SMTP handshake (often
-// 300-800ms on shared hosting like cPanel) — never do it per request.
-//
-// Nothing here is ever awaited inside a request handler. Callers use
-// sendMailAsync(), which returns immediately and delivers in the background,
-// so API response time does not depend on the mail server.
+ 
 
 const path = require('path')
 const nodemailer = require('nodemailer')
@@ -17,7 +9,7 @@ let transporter = null
 
 const LOGO_PATH = path.join(__dirname, '..', 'assets', 'logo.png')
 
-/** Inline logo attachment referenced by the templates as cid:glamhub-logo. */
+//Inline logo attachment referenced
 function logoAttachment() {
   return {
     filename: 'glamhub-logo.png',
@@ -34,7 +26,7 @@ function getTransporter() {
   transporter = nodemailer.createTransport({
     host: env.mail.host,
     port: env.mail.port,
-    secure: env.mail.secure, // true for 465; false for 587/25 (STARTTLS)
+    secure: env.mail.secure, 
     auth: { user: env.mail.user, pass: env.mail.password },
     pool: true,
     maxConnections: 3,
@@ -47,11 +39,7 @@ function getTransporter() {
   return transporter
 }
 
-/**
- * Queue an email. Returns immediately — never await this in a route handler.
- * When SMTP is not configured the message is logged instead, so the sign-up
- * flow still works locally without a mail server.
- */
+ 
 function sendMailAsync({ to, subject, html, text, attachments = [] }) {
   const mailer = getTransporter()
 
@@ -68,34 +56,34 @@ function sendMailAsync({ to, subject, html, text, attachments = [] }) {
   })
 }
 
-/** Branded OTP email (see emailTemplates.js). */
+//Branded OTP email
 function sendOtpEmail({ to, firstName, code, purpose }) {
   const { subject, html, text } = templates.otpEmail({ firstName, code, purpose })
   sendMailAsync({ to, subject, html, text, attachments: [logoAttachment()] })
 }
 
-/** Where links in emails should point (the Next.js app, not the API). */
+// Where links in emails should  
 const appUrl = () => env.clientUrls[0] || 'http://localhost:3000'
 
-/** Artist finished onboarding and is waiting on admin review. */
+//Artist finished onboarding
 function sendArtistSubmittedEmail({ to, firstName }) {
   const { subject, html, text } = templates.artistSubmittedEmail({ firstName, appUrl: appUrl() })
   sendMailAsync({ to, subject, html, text, attachments: [logoAttachment()] })
 }
 
-/** Admin approved the artist — account is live. */
+//Admin approved the artist
 function sendArtistApprovedEmail({ to, firstName }) {
   const { subject, html, text } = templates.artistApprovedEmail({ firstName, appUrl: appUrl() })
   sendMailAsync({ to, subject, html, text, attachments: [logoAttachment()] })
 }
 
-/** Admin rejected the artist, with a reason they can act on. */
+// Admin rejected the artist 
 function sendArtistRejectedEmail({ to, firstName, reason }) {
   const { subject, html, text } = templates.artistRejectedEmail({ firstName, reason, appUrl: appUrl() })
   sendMailAsync({ to, subject, html, text, attachments: [logoAttachment()] })
 }
 
-/** Verify SMTP credentials. Used at boot and by scripts/test-email.js. */
+// Verify SMTP credentials.  
 async function verifyConnection() {
   const mailer = getTransporter()
   if (!mailer) return false
@@ -103,7 +91,7 @@ async function verifyConnection() {
   return true
 }
 
-/** Blocking send — only for the CLI test script, never for a request. */
+//Blocking send 
 function sendMailNow(options) {
   const mailer = getTransporter()
   if (!mailer) throw new Error('SMTP is not configured (check MAIL_HOST / MAIL_USERNAME / MAIL_PASSWORD)')

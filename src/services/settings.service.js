@@ -1,18 +1,9 @@
-// Platform settings the admin edits at runtime.
-//
-// The booking service fee used to be a `const SERVICE_FEE = 150` copied into
-// three files — two on the server, one on the booking screen. Any drift between
-// them would have shown the client one total and charged another. It now lives
-// in one table row, read through here.
+ 
 
 const { query, queryOne } = require('../config/db')
 const env = require('../config/env')
 
-/**
- * Every setting, with the value used when the row is missing and the bounds a
- * new value has to fall inside. `env` supplies the commission default so an
- * existing deployment keeps the number it was configured with.
- */
+ 
 const DEFINITIONS = {
   serviceFee: {
     key: 'service_fee',
@@ -30,11 +21,7 @@ const DEFINITIONS = {
   },
 }
 
-/**
- * Cached briefly: the fee is read on every booking and price quote, and it
- * changes about never. A short TTL means an admin's edit takes effect straight
- * away without a restart.
- */
+ 
 const CACHE_TTL_MS = 30_000
 let cache = null
 let cachedAt = 0
@@ -45,7 +32,7 @@ function clampNumber(value, { min, max }) {
   return Math.min(max, Math.max(min, Math.round(number * 100) / 100))
 }
 
-/** All settings, falling back to the defaults for anything unset. */
+//All settings, falling back
 async function getSettings() {
   if (cache && Date.now() - cachedAt < CACHE_TTL_MS) return cache
 
@@ -53,7 +40,7 @@ async function getSettings() {
   try {
     rows = await query('SELECT setting_key, setting_value FROM settings')
   } catch {
-    // Table missing (migration not run yet) — the defaults still work.
+ 
     rows = []
   }
 
@@ -71,22 +58,18 @@ async function getSettings() {
   return settings
 }
 
-/** The booking service fee, in AED. */
+///The booking service fee, in AED
 async function getServiceFee() {
   const { serviceFee } = await getSettings()
   return serviceFee
 }
 
-/** The platform's cut of the services subtotal, as a percentage. */
-async function getCommissionPercent() {
+ async function getCommissionPercent() {
   const { commissionPercent } = await getSettings()
   return commissionPercent
 }
 
-/**
- * Write the settings an admin submitted. Returns { settings, errors } rather
- * than throwing, so the caller decides how to report a bad value.
- */
+ 
 async function updateSettings(patch, adminId) {
   const errors = {}
   const writes = []
@@ -122,13 +105,13 @@ async function updateSettings(patch, adminId) {
   return { errors: null, settings: await getSettings() }
 }
 
-/** Drop the cache so the next read hits the database. */
+//Drop the cache so the next read hits the database
 function invalidate() {
   cache = null
   cachedAt = 0
 }
 
-/** When each setting was last changed, and by whom — shown on the admin page. */
+//When each setting was last changed, and by whom — shown on the admin page
 async function getMetadata() {
   try {
     const row = await queryOne(

@@ -1,9 +1,4 @@
-// The artist's own calendar: their client list, appointments they add
-// themselves, time they block out, and holidays.
-//
-// Anything written here goes through checkSlot first — the artist's schedule
-// and the public booking page are two doors into the same calendar, and only
-// one of them used to be guarded.
+ 
 
 const { v4: uuid } = require('uuid')
 const { query, queryOne, transaction } = require('../config/db')
@@ -28,24 +23,29 @@ function serializeBlockedTime(row) {
   }
 }
 
-/**
- * Bookings that are still live inside a date range.
- *
- * Only pending and confirmed count: completed and cancelled appointments need
- * nothing from the artist. Used to warn about a vacation that lands on top of
- * work already accepted.
- */
-async function appointmentsInRange(artistId, startDate, endDate) {
+ 
+async function appointmentsInRange(artistId, startDate, endDate, window = null) {
+  const where = [
+    'a.artist_id = ?',
+    "a.status IN ('pending','confirmed')",
+    'a.appointment_date BETWEEN ? AND ?',
+  ]
+  const params = [artistId, startDate, endDate]
+
+  if (window && window.startTime && window.endTime) {
+     
+    where.push("a.start_time < ? AND COALESCE(a.end_time, ADDTIME(a.start_time, '01:00:00')) > ?")
+    params.push(`${String(window.endTime).slice(0, 5)}:00`, `${String(window.startTime).slice(0, 5)}:00`)
+  }
+
   const rows = await query(
     `SELECT a.id, a.appointment_date, a.start_time, a.end_time, a.status,
             u.first_name, u.last_name
        FROM appointments a
        LEFT JOIN users u ON u.id = a.client_id
-      WHERE a.artist_id = ?
-        AND a.status IN ('pending','confirmed')
-        AND a.appointment_date BETWEEN ? AND ?
+      WHERE ${where.join(' AND ')}
       ORDER BY a.appointment_date, a.start_time`,
-    [artistId, startDate, endDate]
+    params
   )
 
   return rows.map((row) => ({
@@ -73,15 +73,7 @@ function serializeVacation(row) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Clients
-// ---------------------------------------------------------------------------
-
-/**
- * GET /api/artist/clients?search=
- * Everyone who has booked this artist, with a little history so the schedule's
- * client picker is useful rather than just a list of names.
- */
+//GET /api/artist/clients?search
 exports.getAllClients = async (req, res) => {
   const search = String(req.query.search || '').trim()
   const params = [req.user.id]
@@ -113,7 +105,7 @@ exports.getAllClients = async (req, res) => {
   return success(res, { clients }, 'OK', 200, { total: clients.length })
 }
 
-/** GET /api/artist/clients/:clientId — one client plus their history here. */
+//GET /api/artist/clients/:clientId
 exports.getClientById = async (req, res) => {
   const row = await queryOne(
     `SELECT u.*, COUNT(a.id) AS total_bookings, MAX(a.appointment_date) AS last_booking
@@ -144,17 +136,7 @@ exports.getClientById = async (req, res) => {
   })
 }
 
-// ---------------------------------------------------------------------------
-// Appointments the artist adds themselves
-// ---------------------------------------------------------------------------
-
-/**
- * POST /api/artist/appointments
- *
- * A walk-in, a phone booking, a repeat client. It goes in as confirmed — the
- * artist is the one accepting it — and unpaid, since money changes hands at
- * the venue.
- */
+//POST /api/artist/appointments
 exports.createAppointment = async (req, res) => {
   const {
     clientId,
@@ -245,13 +227,8 @@ exports.createAppointment = async (req, res) => {
   )
 
   return success(res, { appointment }, 'Appointment added to your schedule', 201)
-}
-
-// ---------------------------------------------------------------------------
-// Blocked time
-// ---------------------------------------------------------------------------
-
-/** GET /api/artist/blocked-time */
+} 
+//GET /api/artist/blocked-time
 exports.getBlockedTime = async (req, res) => {
   const where = ['artist_id = ?']
   const params = [req.user.id]
@@ -270,11 +247,23 @@ exports.getBlockedTime = async (req, res) => {
     params
   )
 
-  const blockedTimes = rows.map(serializeBlockedTime)
+  
+  const blockedTimes = []
+  for (const row of rows) {
+    const blocked = serializeBlockedTime(row)
+    blocked.conflictingAppointments = await appointmentsInRange(
+      req.user.id,
+      blocked.startDate,
+      blocked.endDate,
+      { startTime: blocked.startTime, endTime: blocked.endTime }
+    )
+    blockedTimes.push(blocked)
+  }
+
   return success(res, { blockedTimes }, 'OK', 200, { total: blockedTimes.length })
 }
 
-/** POST /api/artist/blocked-time */
+//POST /api/artist/blocked-time
 exports.createBlockedTime = async (req, res) => {
   const { startDate, endDate, startTime, endTime, duration, reason } = req.body || {}
 
@@ -285,11 +274,19 @@ exports.createBlockedTime = async (req, res) => {
   if (Object.keys(errors).length) throw ApiError.validation(errors)
 
   const from = `${String(startTime).slice(0, 5)}:00`
-  // '3 hours' is what the form sends when no explicit end time is picked.
+   
   const hours = /(\d+)\s*hour/i.exec(String(duration || ''))
   const to = endTime
     ? `${String(endTime).slice(0, 5)}:00`
     : addMinutes(from, hours ? parseInt(hours[1], 10) * 60 : 60)
+
+  
+  const conflicts = await appointmentsInRange(
+    req.user.id,
+    startDate,
+    endDate || startDate,
+    { startTime: from, endTime: to }
+  )
 
   const id = uuid()
   await query(
@@ -299,15 +296,21 @@ exports.createBlockedTime = async (req, res) => {
   )
 
   const row = await queryOne('SELECT * FROM blocked_times WHERE id = ?', [id])
-  return success(res, { blockedTime: serializeBlockedTime(row) }, 'Time blocked', 201)
+  const blockedTime = serializeBlockedTime(row)
+  blockedTime.conflictingAppointments = conflicts
+
+  return success(
+    res,
+    { blockedTime, existingAppointments: conflicts.length, conflictingAppointments: conflicts },
+    conflicts.length
+      ? `Time blocked, but you have ${conflicts.length} appointment(s) booked in that window. Reschedule or cancel them so clients are not left waiting.`
+      : 'Time blocked',
+    201
+  )
 }
 
-/**
- * PATCH /api/artist/blocked-time/:blockedTimeId
- *
- * Only the fields present in the body are touched, so the client can send just
- * what the artist edited.
- */
+//PATCH /api/artist/blocked-time/:blockedTimeId
+
 exports.updateBlockedTime = async (req, res) => {
   const row = await queryOne('SELECT * FROM blocked_times WHERE id = ? LIMIT 1', [
     req.params.blockedTimeId,
@@ -322,8 +325,7 @@ exports.updateBlockedTime = async (req, res) => {
   const nextStart = startTime ? `${String(startTime).slice(0, 5)}:00` : row.start_time
   const nextDuration = duration !== undefined ? duration : row.duration
 
-  // An explicit end time wins; otherwise re-derive it from the duration so an
-  // edited duration actually moves the end of the block.
+   
   let nextEnd
   if (endTime) {
     nextEnd = `${String(endTime).slice(0, 5)}:00`
@@ -356,11 +358,26 @@ exports.updateBlockedTime = async (req, res) => {
     ]
   )
 
+  // Same warning as on create: the window may have moved onto booked work.
+  const conflicts = await appointmentsInRange(req.user.id, nextStartDate, nextEndDate, {
+    startTime: nextStart,
+    endTime: nextEnd,
+  })
+
   const updated = await queryOne('SELECT * FROM blocked_times WHERE id = ?', [row.id])
-  return success(res, { blockedTime: serializeBlockedTime(updated) }, 'Blocked time updated')
+  const blockedTime = serializeBlockedTime(updated)
+  blockedTime.conflictingAppointments = conflicts
+
+  return success(
+    res,
+    { blockedTime, existingAppointments: conflicts.length, conflictingAppointments: conflicts },
+    conflicts.length
+      ? `Blocked time updated, but you have ${conflicts.length} appointment(s) booked in that window. Reschedule or cancel them so clients are not left waiting.`
+      : 'Blocked time updated'
+  )
 }
 
-/** DELETE /api/artist/blocked-time/:blockedTimeId */
+//DELETE /api/artist/blocked-time/:blockedTimeId
 exports.deleteBlockedTime = async (req, res) => {
   const row = await queryOne('SELECT * FROM blocked_times WHERE id = ? LIMIT 1', [
     req.params.blockedTimeId,
@@ -372,11 +389,8 @@ exports.deleteBlockedTime = async (req, res) => {
   return success(res, {}, 'Blocked time removed')
 }
 
-// ---------------------------------------------------------------------------
-// Vacations
-// ---------------------------------------------------------------------------
-
-/** GET /api/artist/vacations */
+ 
+//GET /api/artist/vacations
 exports.getVacations = async (req, res) => {
   const where = ['artist_id = ?']
   const params = [req.user.id]
@@ -395,10 +409,7 @@ exports.getVacations = async (req, res) => {
     params
   )
 
-  // A vacation does not cancel anything on its own — an artist can take time
-  // off over dates they have already accepted work on. Each one carries the
-  // bookings still standing inside it so the schedule can keep asking the
-  // artist to reschedule or cancel them.
+  
   const vacations = []
   for (const row of rows) {
     const vacation = serializeVacation(row)
@@ -413,7 +424,7 @@ exports.getVacations = async (req, res) => {
   return success(res, { vacations }, 'OK', 200, { total: vacations.length })
 }
 
-/** POST /api/artist/vacations */
+//POST /api/artist/vacations
 exports.createVacation = async (req, res) => {
   const { startDate, endDate, reason } = req.body || {}
 
@@ -425,10 +436,7 @@ exports.createVacation = async (req, res) => {
   }
   if (Object.keys(errors).length) throw ApiError.validation(errors)
 
-  // Warn rather than block. An artist who needs the day off should get it even
-  // when work is already booked — what they must not do is have it happen
-  // silently, so the bookings come back with the vacation and stay flagged on
-  // the schedule until they are rescheduled or cancelled.
+  
   const conflicts = await appointmentsInRange(req.user.id, startDate, endDate)
 
   const id = uuid()
@@ -451,7 +459,7 @@ exports.createVacation = async (req, res) => {
   )
 }
 
-/** PATCH /api/artist/vacations/:vacationId */
+//PATCH /api/artist/vacations/:vacationId
 exports.updateVacation = async (req, res) => {
   const row = await queryOne('SELECT * FROM vacations WHERE id = ? LIMIT 1', [req.params.vacationId])
   if (!row) throw ApiError.notFound('That vacation no longer exists')
@@ -488,7 +496,7 @@ exports.updateVacation = async (req, res) => {
   )
 }
 
-/** DELETE /api/artist/vacations/:vacationId */
+//DELETE /api/artist/vacations/:vacationId
 exports.deleteVacation = async (req, res) => {
   const row = await queryOne('SELECT * FROM vacations WHERE id = ? LIMIT 1', [req.params.vacationId])
   if (!row) throw ApiError.notFound('That vacation no longer exists')
@@ -498,13 +506,8 @@ exports.deleteVacation = async (req, res) => {
   return success(res, {}, 'Vacation removed')
 }
 
-/**
- * PATCH /api/artist/appointments/:appointmentId/reschedule
- *
- * Move an appointment to a new date/time. The new slot is checked against the
- * rest of the calendar — excluding this appointment, or it would always clash
- * with the slot it currently occupies.
- */
+//PATCH /api/artist/appointments/:appointmentId/reschedule
+
 exports.rescheduleAppointment = async (req, res) => {
   const { appointmentDate, appointmentTime, endTime } = req.body || {}
 

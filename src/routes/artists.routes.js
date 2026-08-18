@@ -1,5 +1,4 @@
-// Public artist directory — powers /, /explore and /explore/[artistId].
-// No authentication: these pages are browsable by anyone.
+ 
 
 const express = require('express')
 const asyncHandler = require('../utils/asyncHandler')

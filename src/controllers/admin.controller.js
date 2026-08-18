@@ -1,4 +1,4 @@
-// Admin console: the artist approval queue, account status and platform stats.
+ 
 
 const fs = require('fs')
 const path = require('path')
@@ -17,10 +17,7 @@ const SORT_COLUMNS = {
   lastName: 'last_name',
 }
 
-/**
- * GET /api/admin/artists
- * ?approvalStatus=pending|approved|rejected|all &search &page &limit &sortBy &sortOrder
- */
+ //get admiin apis
 exports.getAllArtists = async (req, res) => {
   const { approvalStatus, search, sortBy, sortOrder } = req.query
   const page = Math.max(1, parseInt(req.query.page, 10) || 1)
@@ -59,10 +56,7 @@ exports.getAllArtists = async (req, res) => {
     submittedAt: row.submitted_at,
     approvedAt: row.approved_at,
     rejectionReason: row.rejection_reason,
-  }))
-
-  // `data` is an object here (not a bare array) because the admin table reads
-  // response.data.artists.
+  })) 
   return paginated(res, { artists }, { total, page, limit })
 }
 
@@ -73,7 +67,7 @@ exports.getArtistDetails = async (req, res) => {
   ])
   if (!artist) throw ApiError.notFound('Artist not found')
 
-  // Three small parallel queries instead of three sequential round trips.
+   
   const [services, images, stats] = await Promise.all([
     query('SELECT * FROM services WHERE artist_id = ? AND is_active = 1', [artist.id]),
     query('SELECT id, image_url FROM portfolio_images WHERE artist_id = ? ORDER BY sort_order', [artist.id]),
@@ -99,7 +93,7 @@ exports.getArtistDetails = async (req, res) => {
     portfolioImages: images.map((row) => row.image_url),
     stats: {
       ...stats,
-      // The admin modal reads averageRating; keep `rating` too for other callers.
+       
       rating: Number(artist.rating || 0),
       averageRating: Number(artist.rating || 0),
       totalReviews: Number(stats.totalReviews || artist.total_reviews || 0),
@@ -107,7 +101,7 @@ exports.getArtistDetails = async (req, res) => {
   })
 }
 
-/** Shared by approve / reject / status. */
+// Shared by approve/reject/status.  
 async function loadPendingArtist(artistId) {
   const artist = await queryOne(
     "SELECT id, first_name, email, approval_status, is_active FROM users WHERE id = ? AND role = 'artist' LIMIT 1",
@@ -117,7 +111,7 @@ async function loadPendingArtist(artistId) {
   return artist
 }
 
-/** PATCH /api/admin/artists/:artistId/approve */
+//PATCH /api/admin/artists/:artistId/approve
 exports.approveArtist = async (req, res) => {
   const artist = await loadPendingArtist(req.params.artistId)
 
@@ -132,9 +126,7 @@ exports.approveArtist = async (req, res) => {
             rejection_reason = NULL, updated_at = ?
       WHERE id = ?`,
     [req.user.id, now, now, artist.id]
-  )
-
-  // Queued in the background — the admin's click returns immediately.
+  ) 
   mail.sendArtistApprovedEmail({ to: artist.email, firstName: artist.first_name })
 
   const updated = await queryOne('SELECT * FROM users WHERE id = ?', [artist.id])
@@ -145,11 +137,9 @@ exports.approveArtist = async (req, res) => {
   )
 }
 
-/** PATCH /api/admin/artists/:artistId/reject   Body: { reason } */
+//PATCH /api/admin/artists/:artistId/reject   Body: { reason }
 exports.rejectArtist = async (req, res) => {
   const artist = await loadPendingArtist(req.params.artistId)
-  // Optional: the current admin screen rejects without asking for text, so
-  // fall back to a message the artist can still act on.
   const reason =
     String(req.body?.reason || req.body?.rejectionReason || '').trim() ||
     'Your profile did not meet our listing requirements. Please review your details, services and portfolio images, then submit again.'
@@ -170,16 +160,7 @@ exports.rejectArtist = async (req, res) => {
     { artist: { ...serializeUser(updated), rejectionReason: reason } },
     'Artist rejected. They have been emailed the reason.'
   )
-}
-
-/**
- * PATCH /api/admin/artists/:artistId/status
- * Body: { isActive: boolean }
- *
- * Deactivating does NOT delete anything — it just stops the account signing in
- * (auth.controller rejects inactive users) and cuts off any token already
- * issued (the authenticate middleware re-checks is_active on every request).
- */
+} 
 exports.setArtistStatus = async (req, res) => {
   const artist = await loadPendingArtist(req.params.artistId)
 
@@ -198,14 +179,7 @@ exports.setArtistStatus = async (req, res) => {
   )
 }
 
-/**
- * DELETE /api/admin/artists/:artistId
- *
- * Permanent. Services, portfolio rows, messages and appointments cascade via
- * foreign keys; the uploaded files are removed from disk too so nothing is
- * orphaned. Refused while the artist still has live bookings — cancel or
- * complete those first, or the client loses their booking with no record.
- */
+//DELETE /api/admin/artists/:artistId
 exports.deleteArtist = async (req, res) => {
   const artist = await queryOne("SELECT * FROM users WHERE id = ? AND role = 'artist' LIMIT 1", [
     req.params.artistId,
@@ -227,9 +201,6 @@ exports.deleteArtist = async (req, res) => {
   const images = await query('SELECT image_url FROM portfolio_images WHERE artist_id = ?', [artist.id])
 
   await query('DELETE FROM users WHERE id = ?', [artist.id])
-
-  // Files are cleaned up after the row is gone; failures here must not fail
-  // the request (basename keeps the path inside the upload directory).
   for (const image of images) {
     fs.promises.unlink(path.join(uploadRoot, path.basename(image.image_url))).catch(() => {})
   }
@@ -239,7 +210,7 @@ exports.deleteArtist = async (req, res) => {
 
 /** GET /api/admin/stats */
 exports.getDashboardStats = async (req, res) => {
-  // One round trip for every counter on the dashboard.
+  
   const stats = await queryOne(`
     SELECT
       (SELECT COUNT(*) FROM users WHERE role = 'artist')                              AS artistsTotal,
@@ -264,13 +235,8 @@ exports.getDashboardStats = async (req, res) => {
     services: { total: Number(stats.servicesTotal) },
     totalRevenue: Number(stats.totalRevenue),
   })
-}
-
-// ---------------------------------------------------------------------------
-// Platform settings
-// ---------------------------------------------------------------------------
-
-/** GET /api/admin/settings */
+} 
+// GET /api/admin/settings  
 exports.getSettings = async (req, res) => {
   const [settings, meta] = await Promise.all([
     settingsService.getSettings(),
@@ -280,13 +246,7 @@ exports.getSettings = async (req, res) => {
   return success(res, { settings, lastChange: meta })
 }
 
-/**
- * PATCH /api/admin/settings
- * Body: { serviceFee?, commissionPercent? }
- *
- * Takes effect on the next booking — the fee is read from here rather than
- * baked into the code, so nothing needs redeploying.
- */
+ //PATCH /api/admin/settings
 exports.updateSettings = async (req, res) => {
   const { errors, settings } = await settingsService.updateSettings(req.body || {}, req.user.id)
   if (errors) throw ApiError.validation(errors)

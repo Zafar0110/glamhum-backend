@@ -1,17 +1,8 @@
-// DB row -> API shape.
-//
-// The frontend was originally written against a Mongo API, so every object it
-// consumes carries BOTH `id` and `_id`, plus a computed `fullName`. Keeping
-// that shape here means no page or component has to change.
+ 
 
 const env = require('../config/env')
 
-/**
- * Uploaded files are stored as '/uploads/x.png' but served by THIS server, not
- * by Next.js. Returning them absolute means every screen renders them without
- * needing to know the API origin. Anything else (already absolute, or a
- * bundled /images/... asset shipped with the frontend) is left alone.
- */
+ 
 function absoluteUpload(url) {
   if (!url) return ''
   if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url
@@ -19,7 +10,7 @@ function absoluteUpload(url) {
   return url
 }
 
-/** Public user / artist object. Never includes password_hash. */
+//Public user / artist object. Never
 function serializeUser(row) {
   if (!row) return null
 
@@ -66,7 +57,7 @@ function serializeUser(row) {
   return user
 }
 
-/** Service row (+ optional add-ons array). */
+//Service row
 function serializeService(row, addOns = []) {
   if (!row) return null
   return {
@@ -79,21 +70,19 @@ function serializeService(row, addOns = []) {
     priceType: row.price_type,
     price: Number(row.price),
     currency: row.currency,
-    duration: row.duration,
-    // false = archived: kept for history but hidden from clients.
+    duration: row.duration, 
     isActive: row.is_active === undefined ? true : Boolean(row.is_active),
     addOns: addOns.map((addOn) => ({
       id: addOn.id,
       name: addOn.name,
-      price: Number(addOn.price),
-      // The add-on form has always offered these two; they now survive a save.
+      price: Number(addOn.price), 
       currency: addOn.currency || row.currency || 'AED',
       duration: addOn.duration || '',
     })),
   }
 }
 
-/** Appointment row. `services` = rows from appointment_services. */
+//Appointment row. `services
 function serializeAppointment(row, services = [], client = null, artist = null) {
   if (!row) return null
   return {
@@ -135,7 +124,7 @@ function serializeAppointment(row, services = [], client = null, artist = null) 
   }
 }
 
-/** Review row (client fields come from a JOIN with users). */
+//Review row
 function serializeReview(row) {
   if (!row) return null
   return {
@@ -160,7 +149,7 @@ function serializeReview(row) {
   }
 }
 
-/** Message row — must match the frontend's NewMessagePayload for socket parity. */
+//Message row — must match
 function serializeMessage(row) {
   if (!row) return null
   return {

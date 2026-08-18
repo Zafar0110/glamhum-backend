@@ -1,16 +1,8 @@
-// GlamHub email templates.
-//
-// Built for real inboxes, not browsers: table-based layout, inline styles only,
-// no flexbox/grid, no web fonts, no external CSS. Gmail, Outlook and Apple Mail
-// all strip <style> blocks or ignore modern CSS, so everything is inlined.
-//
-// The logo is attached as an inline CID image (src/assets/logo.png) rather than
-// a hosted URL — CID images render even when the client blocks remote content,
-// which Gmail and Outlook both do by default for unknown senders.
+ 
 
 const env = require('../config/env')
 
-// Site palette (frontend/tailwind.config.ts)
+// Site palette  
 const COLORS = {
   navy: '#091E4A',
   navyLight: '#0c275f',
@@ -28,10 +20,7 @@ const SANS = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, san
 
 const LOGO_CID = 'glamhub-logo'
 
-/**
- * Shared shell: cream backdrop, white rounded card, logo header, footer.
- * `content` is the inner HTML of the card.
- */
+ 
 function layout({ title, content, preheader = '' }) {
   const year = new Date().getFullYear()
 
@@ -92,7 +81,7 @@ function layout({ title, content, preheader = '' }) {
 </html>`
 }
 
-/** Heading with the pink underline used across the site. */
+// Heading with the pink  
 function heading(text) {
   return `
     <h1 style="margin:0 0 4px;font-family:${SERIF};font-size:28px;line-height:1.25;
@@ -104,7 +93,7 @@ function heading(text) {
     </table>`
 }
 
-/** The code itself: one box per digit, peach fill, navy numerals. */
+//The code itself
 function codeBlock(code) {
   const digits = String(code)
     .split('')
@@ -132,7 +121,7 @@ function codeBlock(code) {
     </table>`
 }
 
-/** Verification / password-reset code email. */
+//Verification / password-reset code email
 function otpEmail({ firstName, code, purpose }) {
   const isReset = purpose === 'forgot_password'
 
@@ -197,7 +186,7 @@ function otpEmail({ firstName, code, purpose }) {
   }
 }
 
-/** Pill button (email-safe: a table, not an <a> with padding). */
+//Pill button 
 function button(label, href) {
   return `
     <table role="presentation" align="center" cellpadding="0" cellspacing="0" border="0" style="margin:28px auto 0;">
@@ -236,7 +225,7 @@ function artistSubmittedEmail({ firstName, appUrl }) {
   }
 }
 
-/** Sent when an admin approves the artist. */
+//Sent when an admin approves the artist
 function artistApprovedEmail({ firstName, appUrl }) {
   const content = `
     ${heading('You&rsquo;re approved')}
@@ -256,7 +245,7 @@ function artistApprovedEmail({ firstName, appUrl }) {
   }
 }
 
-/** Sent when an admin rejects the artist, with the reason. */
+//Sent when an admin rejects the artist, with the reason
 function artistRejectedEmail({ firstName, reason, appUrl }) {
   const content = `
     ${heading('About your application')}

@@ -8,8 +8,7 @@ const server = http.createServer(app)
 sockets.init(server)
 
 async function start() {
-  // A missing database should not stop the server from booting — /api/health
-  // reports the failure so you can fix .env without a crash loop.
+  
   try {
     await testConnection()
     console.log(`[db]     connected to ${env.db.database} @ ${env.db.host}:${env.db.port}`)
@@ -32,7 +31,7 @@ async function shutdown(signal) {
     await pool.end().catch(() => {})
     process.exit(0)
   })
-  // Force-exit if connections refuse to drain.
+  
   setTimeout(() => process.exit(1), 10000).unref()
 }
 

@@ -1,7 +1,4 @@
-// Public artist directory — powers the home page "Featured Artists" strip,
-// /explore (search + filters) and /explore/[artistId] (profile detail).
-//
-// Only APPROVED, ACTIVE artists are ever visible here.
+ 
 
 const { query, queryOne } = require('../config/db')
 const ApiError = require('../utils/ApiError')
@@ -13,12 +10,13 @@ const { looksLikeUuid } = require('../utils/slug')
 
 const VISIBLE = "role = 'artist' AND approval_status = 'approved' AND is_active = 1"
 
-/** Shape the public list/detail screens expect (see lib/utils/artistMapper.ts). */
+//Shape the public list/detail
+
 function serializePublicArtist(row, portfolioImages = []) {
   return {
     id: row.id,
     _id: row.id,
-    // The public profile URL segment; links should use this, not the id.
+     
     slug: row.slug || null,
     firstName: row.first_name,
     lastName: row.last_name,
@@ -44,11 +42,8 @@ function serializePublicArtist(row, portfolioImages = []) {
   }
 }
 
-/**
- * GET /api/artists
- * ?page &limit &city &serviceType &minPrice &maxPrice &search &sortBy
- * sortBy: rating (default) | price | newest
- */
+//GET /api/artists
+
 exports.getArtists = async (req, res) => {
   const { city, serviceType, search, sortBy } = req.query
   const page = Math.max(1, parseInt(req.query.page, 10) || 1)
@@ -97,8 +92,7 @@ exports.getArtists = async (req, res) => {
     params.push(minRating)
   }
 
-  // Where the artist works. Ticking BOTH (or neither) means "no preference" —
-  // combining them as AND would ask for has_studio = 1 AND 0 and return nothing.
+   
   const wantsStudio = req.query.hasStudio === 'true'
   const wantsTravel = req.query.travelsToVenue === 'true'
   if (wantsStudio && !wantsTravel) where.push('has_studio = 1')
@@ -131,7 +125,7 @@ exports.getArtists = async (req, res) => {
     [...params, String(limit), String(offset)]
   )
 
-  // SPEED: one query for every artist's images instead of one per artist.
+   
   const images = await portfolioImagesFor(rows.map((row) => row.id))
 
   const artists = rows.map((row) => serializePublicArtist(row, images.get(row.id) || []))
@@ -139,7 +133,8 @@ exports.getArtists = async (req, res) => {
   return paginated(res, { artists }, { total, page, limit })
 }
 
-/** Portfolio images for many artists at once -> Map<artistId, string[]>. */
+//Portfolio images for many artists at once -> Map<artistId, string
+
 async function portfolioImagesFor(artistIds) {
   const map = new Map()
   if (!artistIds.length) return map
@@ -160,14 +155,7 @@ async function portfolioImagesFor(artistIds) {
   return map
 }
 
-/**
- * Look an artist up by either form of the URL segment.
- *
- * Profiles are linked as /explore/zafar-iqbal-hevanef820, but the id still
- * resolves so older links, bookmarks and anything that kept a raw id keep
- * working — including a slug that has since changed because the artist renamed
- * themselves.
- */
+ 
 async function findVisibleArtist(param) {
   const value = String(param || '').trim()
   if (!value) return null
@@ -176,17 +164,13 @@ async function findVisibleArtist(param) {
   return queryOne(`SELECT * FROM users WHERE ${column} = ? AND ${VISIBLE} LIMIT 1`, [value])
 }
 
-/**
- * GET /api/artists/:artistId
- * Accepts an id or a slug.
- * -> { artist (with stats + portfolioImages), services, reviews }
- */
+//GET /api/artists/:artistId
+
 exports.getArtistById = async (req, res) => {
   const artist = await findVisibleArtist(req.params.artistId)
   if (!artist) throw ApiError.notFound('Artist not found or not accepting bookings yet')
 
-  // Today, as a local calendar date — past blocks/vacations are not news to a
-  // client deciding whether to book.
+  
   const today = new Date()
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(
     today.getDate()
@@ -251,13 +235,7 @@ exports.getArtistById = async (req, res) => {
     createdAt: row.created_at,
   }))
 
-  /**
-   * Upcoming unavailability, so a client can see when this artist is away
-   * before picking a date.
-   *
-   * Dates and times only — the artist's own reason for a vacation or a blocked
-   * slot is private and is deliberately not exposed on a public page.
-   */
+  
   const toDate = (value) =>
     value instanceof Date
       ? `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(
@@ -286,22 +264,11 @@ exports.getArtistById = async (req, res) => {
   })
 }
 
-/**
- * GET /api/artists/:artistId/availability?date=YYYY-MM-DD&time=HH:MM-HH:MM
- *
- * Answers two different questions, and it matters which one is being asked:
- *
- *   with `time`  — "can I book THIS slot?" Checked against the real calendar.
- *   without      — "what is left on this day?" Suggests the free day slots.
- *
- * The suggestion list alone is not an answer to the first question: it only
- * covers 09:00–20:00, so a booking outside those hours (an early-morning
- * 00:00–01:00, say) overlapped none of them and the day was reported free even
- * though that exact slot was taken.
- */
+//GET /api/artists/:artistId/availability
+
 const DAY_SLOTS = ['09:00-11:00', '11:00-13:00', '14:00-16:00', '16:00-18:00', '18:00-20:00']
 
-/** 'HH:MM' | 'HH:MM-HH:MM' -> { startTime, endTime } in HH:MM:SS, or null. */
+ 
 function parseRequestedTime(raw) {
   const value = String(raw || '').trim()
   if (!value) return null
@@ -319,7 +286,7 @@ function parseRequestedTime(raw) {
   const startTime = normalise(fromPart)
   if (!startTime) return null
 
-  // A single time means a one-hour slot, matching what booking assumes.
+  
   const endTime = normalise(toPart) || addMinutes(startTime, 60)
   return { startTime, endTime }
 }
@@ -328,8 +295,7 @@ exports.serializePublicArtist = serializePublicArtist
 exports.portfolioImagesFor = portfolioImagesFor
 
 exports.checkAvailability = async (req, res) => {
-  // Same id-or-slug handling as the profile, so the availability check works
-  // straight from the URL the client is sitting on.
+  
   const artist = await findVisibleArtist(req.params.artistId)
   if (!artist) throw ApiError.notFound('Artist not found')
 
@@ -363,11 +329,11 @@ exports.checkAvailability = async (req, res) => {
 
   const timeSlots = DAY_SLOTS.filter((slot) => {
     const [from, to] = slot.split('-').map(toMinutes)
-    // Keep the slot only if it overlaps nothing already booked.
+     
     return !busy.some((period) => from < period.to && to > period.from)
   })
 
-  // What is already taken, so the client can be told WHY a time is refused.
+   
   const bookedPeriods = [...appointments, ...blocked]
     .map((row) => ({
       startTime: String(row.start_time).slice(0, 5),
@@ -377,7 +343,7 @@ exports.checkAvailability = async (req, res) => {
 
   const requested = parseRequestedTime(req.query.time)
 
-  // A specific time was asked about: answer that question, not a general one.
+   
   if (requested) {
     const slot = await checkSlot(artist.id, date, requested.startTime, requested.endTime)
     return success(res, {
@@ -385,7 +351,7 @@ exports.checkAvailability = async (req, res) => {
       reason: slot.reason,
       conflicts: slot.conflicts,
       requestedTime: `${requested.startTime.slice(0, 5)} - ${requested.endTime.slice(0, 5)}`,
-      // Offered as alternatives when the chosen time is gone.
+      
       timeSlots,
       bookedPeriods,
       date,

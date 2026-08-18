@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken')
 const env = require('../config/env')
 
-/** Sign an access token for a user row. */
+//Sign an access token
 function signToken(user, rememberMe = false) {
   return jwt.sign(
     { sub: user.id, role: user.role, email: user.email },
@@ -10,7 +10,7 @@ function signToken(user, rememberMe = false) {
   )
 }
 
-/** Verify a token; throws when invalid/expired. */
+//Verify a token; throws when invalid/expired
 function verifyToken(token) {
   return jwt.verify(token, env.jwt.secret)
 }

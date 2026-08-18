@@ -1,4 +1,4 @@
-// Admin console — artist approvals and platform stats. Requires role = 'admin'.
+// Admin console —  
 
 const express = require('express')
 const asyncHandler = require('../utils/asyncHandler')

@@ -1,9 +1,4 @@
-// Is an artist free at a given moment?
-//
-// One implementation for both sides of the marketplace: the client booking a
-// slot from the artist's public page, and the artist adding an appointment from
-// their own schedule. Two routes into the same calendar means two chances to
-// double-book, so neither writes an appointment without asking this first.
+ 
 
 const { query, queryOne } = require('../config/db')
 
@@ -13,13 +8,7 @@ function toMinutes(value) {
   return (hours || 0) * 60 + (minutes || 0)
 }
 
-/**
- * Everything already occupying `date` between `startTime` and `endTime`.
- *
- * Returns { available, reason, conflicts: { appointments, blockedTime, vacations } }.
- * `excludeAppointmentId` lets an appointment be moved without clashing with
- * its own current slot.
- */
+//Everything already occupying
 async function checkSlot(artistId, date, startTime, endTime, { excludeAppointmentId } = {}) {
   const from = toMinutes(startTime)
   const to = toMinutes(endTime)
@@ -53,7 +42,7 @@ async function checkSlot(artistId, date, startTime, endTime, { excludeAppointmen
     }
   }
 
-  // Two periods overlap when each starts before the other ends.
+  // Two periods overlap  
   const overlaps = (row) => from < toMinutes(row.end_time || row.start_time) && to > toMinutes(row.start_time)
 
   const clashingAppointments = appointments.filter(overlaps)

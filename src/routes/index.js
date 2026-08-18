@@ -1,4 +1,4 @@
-// Mounts every route group under the API prefix (default /api).
+ 
 
 const express = require('express')
 const { testConnection } = require('../config/db')
@@ -6,7 +6,7 @@ const { success } = require('../utils/response')
 
 const router = express.Router()
 
-/** GET /api/health — liveness + database ping. */
+//GET /api/health — liveness
 router.get('/health', async (req, res) => {
   let database = 'up'
   try {
@@ -27,12 +27,8 @@ router.get('/health', async (req, res) => {
     : res.status(503).json({ success: false, message: 'Database unreachable', data })
 })
 
-/**
- * GET /api/settings — the handful of platform values a public page needs.
- *
- * The booking screen has to show the same service fee the server will charge;
- * it used to hardcode 150 alongside two server-side copies.
- */
+//GET /api/settings
+
 router.get('/settings', async (req, res) => {
   const { getSettings } = require('../services/settings.service')
   const { serviceFee } = await getSettings()
@@ -41,8 +37,8 @@ router.get('/settings', async (req, res) => {
 
 router.use('/auth', require('./auth.routes'))
 router.use('/otp', require('./otp.routes'))
-router.use('/artists', require('./artists.routes')) // public directory
-router.use('/artist', require('./artist.routes')) // artist dashboard
+router.use('/artists', require('./artists.routes'))  
+router.use('/artist', require('./artist.routes'))  
 router.use('/client', require('./client.routes'))
 router.use('/services', require('./services.routes'))
 router.use('/portfolio', require('./portfolio.routes'))

@@ -1,8 +1,4 @@
-// Minimal seed so you can sign in immediately after migrating.
-// Creates one admin, one demo artist (approved) and one demo client.
-// Safe to re-run: existing emails are skipped.
-//
-//   npm run db:seed
+ 
 
 const bcrypt = require('bcryptjs')
 const { v4: uuid } = require('uuid')
